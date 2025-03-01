@@ -87,7 +87,7 @@ if ! check_command "electron"; then
 fi
 
 # Extract version from the installer filename
-VERSION=$(basename "$CLAUDE_DOWNLOAD_URL" | grep -oP 'Claude-Setup-x64\.exe' | sed 's/Claude-Setup-x64\.exe/0.7.9/')
+VERSION=$(basename "$CLAUDE_DOWNLOAD_URL" | grep -oP 'Claude-Setup-x64\.exe' | sed 's/Claude-Setup-x64\.exe/0.8.0/')
 PACKAGE_NAME="claude-desktop"
 ARCHITECTURE="amd64"
 MAINTAINER="Claude Desktop Linux Maintainers"
@@ -228,6 +228,9 @@ mkdir -p app.asar.contents/resources
 cp ../lib/net45/resources/Tray* app.asar.contents/resources/
 
 # Repackage app.asar
+mkdir -p app.asar.contents/resources/i18n/
+cp ../lib/net45/resources/*.json app.asar.contents/resources/i18n/
+
 npx asar pack app.asar.contents app.asar
 
 # Create native module with keyboard constants
