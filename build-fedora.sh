@@ -86,8 +86,6 @@ if ! check_command "electron"; then
     echo "Electron installed successfully"
 fi
 
-# Extract version from the installer filename
-VERSION=$(basename "$CLAUDE_DOWNLOAD_URL" | grep -oP 'Claude-Setup-x64\.exe' | sed 's/Claude-Setup-x64\.exe/0.8.0/')
 PACKAGE_NAME="claude-desktop"
 ARCHITECTURE="amd64"
 MAINTAINER="Claude Desktop Linux Maintainers"
@@ -130,7 +128,18 @@ if ! 7z x -y "$CLAUDE_EXE"; then
     exit 1
 fi
 
-if ! 7z x -y "AnthropicClaude-$VERSION-full.nupkg"; then
+# Find the nupkg file
+NUPKG_FILE=$(find . -name "AnthropicClaude-*-full.nupkg" | head -1)
+if [ -z "$NUPKG_FILE" ]; then
+    echo "❌ Could not find AnthropicClaude nupkg file"
+    exit 1
+fi
+
+# Extract the version from the nupkg filename
+VERSION=$(echo "$NUPKG_FILE" | grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full\.nupkg)')
+echo "📋 Detected Claude version: $VERSION"
+
+if ! 7z x -y "$NUPKG_FILE"; then
     echo "❌ Failed to extract nupkg"
     exit 1
 fi
