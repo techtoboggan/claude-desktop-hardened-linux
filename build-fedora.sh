@@ -105,17 +105,7 @@ if [ ! -z "$DEPS_TO_INSTALL" ]; then
     echo "System dependencies installed successfully"
 fi
 
-# Install electron globally via npm if not present
-if ! check_command "electron"; then
-    echo "Installing electron via npm..."
-    npm install -g electron
-    if ! check_command "electron"; then
-        echo "Failed to install electron. Please install it manually:"
-        echo "sudo npm install -g electron"
-        exit 1
-    fi
-    echo "Electron installed successfully"
-fi
+
 
 PACKAGE_NAME="claude-desktop"
 ARCHITECTURE="amd64"
@@ -334,10 +324,11 @@ MimeType=x-scheme-handler/claude;
 StartupWMClass=claude
 EOF
 
-# Create launcher script
+# Create launcher script with Wayland flags and logging
 cat > "$INSTALL_DIR/bin/claude-desktop" << EOF
 #!/bin/bash
-electron /usr/lib64/claude-desktop/app.asar "\$@"
+LOG_FILE="\$HOME/claude-desktop-launcher.log"
+electron /usr/lib64/claude-desktop/app.asar --ozone-platform-hint=auto --enable-logging=file --log-file=\$LOG_FILE --log-level=INFO "\$@"
 EOF
 chmod +x "$INSTALL_DIR/bin/claude-desktop"
 
@@ -381,6 +372,43 @@ gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor || :
 touch -h %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 update-desktop-database %{_datadir}/applications || :
 
+# Set correct permissions for chrome-sandbox
+echo "Setting chrome-sandbox permissions..."
+SANDBOX_PATH=""
+# Check for sandbox in locally packaged electron first
+if [ -f "/usr/lib64/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox" ]; then
+    SANDBOX_PATH="/usr/lib64/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+
+elif [ -n "$SUDO_USER" ]; then
+    # Running via sudo: try to get electron from the invoking user's environment
+    if su - "$SUDO_USER" -c "command -v electron >/dev/null 2>&1"; then
+        ELECTRON_PATH=$(su - "$SUDO_USER" -c "command -v electron")
+
+        POTENTIAL_SANDBOX="\$(dirname "\$(dirname "\$ELECTRON_PATH")")/lib/node_modules/electron/dist/chrome-sandbox"
+        if [ -f "\$POTENTIAL_SANDBOX" ]; then
+            SANDBOX_PATH="\$POTENTIAL_SANDBOX"
+        fi
+    fi
+else
+    # Running directly as root (no SUDO_USER); attempt to find electron in root's PATH
+    if command -v electron >/dev/null 2>&1; then
+        ELECTRON_PATH=$(command -v electron)
+        POTENTIAL_SANDBOX="\$(dirname "\$(dirname "\$ELECTRON_PATH")")/lib/node_modules/electron/dist/chrome-sandbox"
+        if [ -f "\$POTENTIAL_SANDBOX" ]; then
+            SANDBOX_PATH="\$POTENTIAL_SANDBOX"
+        fi
+    fi
+fi
+
+if [ -n "\$SANDBOX_PATH" ] && [ -f "\$SANDBOX_PATH" ]; then
+    echo "Found chrome-sandbox at: \$SANDBOX_PATH"
+    chown root:root "\$SANDBOX_PATH" || echo "Warning: Failed to chown chrome-sandbox"
+    chmod 4755 "\$SANDBOX_PATH" || echo "Warning: Failed to chmod chrome-sandbox"
+    echo "Permissions set for \$SANDBOX_PATH"
+else
+    echo "Warning: chrome-sandbox binary not found. Sandbox may not function correctly."
+fi
+
 %changelog
 * $(date '+%a %b %d %Y') ${MAINTAINER} ${VERSION}-1
 - Initial package
@@ -390,11 +418,14 @@ EOF
 echo "📦 Building RPM package..."
 mkdir -p "${WORK_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
-RPM_FILE="$(pwd)/claude-desktop-${VERSION}-1.$(uname -m).rpm"
-if ! rpmbuild -bb \
+RPM_FILE="$(pwd)/x86_64/claude-desktop-${VERSION}-1.fc41.$(uname -m).rpm"
+if rpmbuild -bb \
     --define "_topdir ${WORK_DIR}" \
     --define "_rpmdir $(pwd)" \
     "${WORK_DIR}/claude-desktop.spec"; then
+    echo "✓ RPM package built successfully at: $RPM_FILE"
+    echo "🎉 Done! You can now install the RPM with: dnf install $RPM_FILE"
+else
     echo "❌ Failed to build RPM package"
     exit 1
 fi
