@@ -11,9 +11,40 @@ if [ ! -f "/etc/fedora-release" ]; then
 fi
 
 # Check for root/sudo
-if [ "$EUID" -ne 0 ]; then
+IS_SUDO=false
+if [ "$EUID" -eq 0 ]; then
+    IS_SUDO=true
+    # Check if running via sudo (and not directly as root)
+    if [ -n "$SUDO_USER" ]; then
+        ORIGINAL_USER="$SUDO_USER"
+        ORIGINAL_HOME=$(eval echo ~$ORIGINAL_USER)
+    else
+        # Running directly as root, no original user context
+        ORIGINAL_USER="root"
+        ORIGINAL_HOME="/root"
+    fi
+else
     echo "Please run with sudo to install dependencies"
     exit 1
+fi
+
+# Preserve NVM path if running under sudo and NVM exists for the original user
+if [ "$IS_SUDO" = true ] && [ "$ORIGINAL_USER" != "root" ] && [ -d "$ORIGINAL_HOME/.nvm" ]; then
+    echo "Found NVM installation for user $ORIGINAL_USER, attempting to preserve npm/npx path..."
+    # Source NVM script to set up NVM environment variables temporarily
+    export NVM_DIR="$ORIGINAL_HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
+
+    # Find the path to the currently active or default Node version's bin directory
+    # nvm_find_node_version might not be available, try finding the latest installed version
+    NODE_BIN_PATH=$(find "$NVM_DIR/versions/node" -maxdepth 2 -type d -name 'bin' | sort -V | tail -n 1)
+
+    if [ -n "$NODE_BIN_PATH" ] && [ -d "$NODE_BIN_PATH" ]; then
+        echo "Adding $NODE_BIN_PATH to PATH"
+        export PATH="$NODE_BIN_PATH:$PATH"
+    else
+        echo "Warning: Could not determine NVM Node bin path. npm/npx might not be found."
+    fi
 fi
 
 # Print system information
@@ -303,10 +334,11 @@ MimeType=x-scheme-handler/claude;
 StartupWMClass=claude
 EOF
 
-# Create launcher script
+# Create launcher script with Wayland flags and logging
 cat > "$INSTALL_DIR/bin/claude-desktop" << EOF
 #!/bin/bash
-electron /usr/lib64/claude-desktop/app.asar "\$@"
+LOG_FILE="\$HOME/claude-desktop-launcher.log"
+electron /usr/lib64/claude-desktop/app.asar --ozone-platform-hint=auto --enable-logging=file --log-file=\$LOG_FILE --log-level=INFO "\$@"
 EOF
 chmod +x "$INSTALL_DIR/bin/claude-desktop"
 
@@ -350,6 +382,43 @@ gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor || :
 touch -h %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 update-desktop-database %{_datadir}/applications || :
 
+# Set correct permissions for chrome-sandbox
+echo "Setting chrome-sandbox permissions..."
+SANDBOX_PATH=""
+# Check for sandbox in locally packaged electron first
+if [ -f "/usr/lib64/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox" ]; then
+    SANDBOX_PATH="/usr/lib64/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+
+elif [ -n "$SUDO_USER" ]; then
+    # Running via sudo: try to get electron from the invoking user's environment
+    if su - "$SUDO_USER" -c "command -v electron >/dev/null 2>&1"; then
+        ELECTRON_PATH=$(su - "$SUDO_USER" -c "command -v electron")
+
+        POTENTIAL_SANDBOX="\$(dirname "\$(dirname "\$ELECTRON_PATH")")/lib/node_modules/electron/dist/chrome-sandbox"
+        if [ -f "\$POTENTIAL_SANDBOX" ]; then
+            SANDBOX_PATH="\$POTENTIAL_SANDBOX"
+        fi
+    fi
+else
+    # Running directly as root (no SUDO_USER); attempt to find electron in root's PATH
+    if command -v electron >/dev/null 2>&1; then
+        ELECTRON_PATH=$(command -v electron)
+        POTENTIAL_SANDBOX="\$(dirname "\$(dirname "\$ELECTRON_PATH")")/lib/node_modules/electron/dist/chrome-sandbox"
+        if [ -f "\$POTENTIAL_SANDBOX" ]; then
+            SANDBOX_PATH="\$POTENTIAL_SANDBOX"
+        fi
+    fi
+fi
+
+if [ -n "\$SANDBOX_PATH" ] && [ -f "\$SANDBOX_PATH" ]; then
+    echo "Found chrome-sandbox at: \$SANDBOX_PATH"
+    chown root:root "\$SANDBOX_PATH" || echo "Warning: Failed to chown chrome-sandbox"
+    chmod 4755 "\$SANDBOX_PATH" || echo "Warning: Failed to chmod chrome-sandbox"
+    echo "Permissions set for \$SANDBOX_PATH"
+else
+    echo "Warning: chrome-sandbox binary not found. Sandbox may not function correctly."
+fi
+
 %changelog
 * $(date '+%a %b %d %Y') ${MAINTAINER} ${VERSION}-1
 - Initial package
@@ -359,11 +428,14 @@ EOF
 echo "📦 Building RPM package..."
 mkdir -p "${WORK_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
-RPM_FILE="$(pwd)/claude-desktop-${VERSION}-1.$(uname -m).rpm"
-if ! rpmbuild -bb \
+RPM_FILE="$(pwd)/x86_64/claude-desktop-${VERSION}-1.fc41.$(uname -m).rpm"
+if rpmbuild -bb \
     --define "_topdir ${WORK_DIR}" \
     --define "_rpmdir $(pwd)" \
     "${WORK_DIR}/claude-desktop.spec"; then
+    echo "✓ RPM package built successfully at: $RPM_FILE"
+    echo "🎉 Done! You can now install the RPM with: dnf install $RPM_FILE"
+else
     echo "❌ Failed to build RPM package"
     exit 1
 fi
