@@ -11,9 +11,40 @@ if [ ! -f "/etc/fedora-release" ]; then
 fi
 
 # Check for root/sudo
-if [ "$EUID" -ne 0 ]; then
+IS_SUDO=false
+if [ "$EUID" -eq 0 ]; then
+    IS_SUDO=true
+    # Check if running via sudo (and not directly as root)
+    if [ -n "$SUDO_USER" ]; then
+        ORIGINAL_USER="$SUDO_USER"
+        ORIGINAL_HOME=$(eval echo ~$ORIGINAL_USER)
+    else
+        # Running directly as root, no original user context
+        ORIGINAL_USER="root"
+        ORIGINAL_HOME="/root"
+    fi
+else
     echo "Please run with sudo to install dependencies"
     exit 1
+fi
+
+# Preserve NVM path if running under sudo and NVM exists for the original user
+if [ "$IS_SUDO" = true ] && [ "$ORIGINAL_USER" != "root" ] && [ -d "$ORIGINAL_HOME/.nvm" ]; then
+    echo "Found NVM installation for user $ORIGINAL_USER, attempting to preserve npm/npx path..."
+    # Source NVM script to set up NVM environment variables temporarily
+    export NVM_DIR="$ORIGINAL_HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
+
+    # Find the path to the currently active or default Node version's bin directory
+    # nvm_find_node_version might not be available, try finding the latest installed version
+    NODE_BIN_PATH=$(find "$NVM_DIR/versions/node" -maxdepth 2 -type d -name 'bin' | sort -V | tail -n 1)
+
+    if [ -n "$NODE_BIN_PATH" ] && [ -d "$NODE_BIN_PATH" ]; then
+        echo "Adding $NODE_BIN_PATH to PATH"
+        export PATH="$NODE_BIN_PATH:$PATH"
+    else
+        echo "Warning: Could not determine NVM Node bin path. npm/npx might not be found."
+    fi
 fi
 
 # Print system information
