@@ -105,7 +105,17 @@ if [ ! -z "$DEPS_TO_INSTALL" ]; then
     echo "System dependencies installed successfully"
 fi
 
-
+# Install electron globally via npm if not present
+if ! check_command "electron"; then
+    echo "Installing electron via npm..."
+    npm install -g electron
+    if ! check_command "electron"; then
+        echo "Failed to install electron. Please install it manually:"
+        echo "sudo npm install -g electron"
+        exit 1
+    fi
+    echo "Electron installed successfully"
+fi
 
 PACKAGE_NAME="claude-desktop"
 ARCHITECTURE="amd64"
