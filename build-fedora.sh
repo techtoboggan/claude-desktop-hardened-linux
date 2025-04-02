@@ -217,7 +217,11 @@ cp "lib/net45/resources/app.asar" electron-app/
 cp -r "lib/net45/resources/app.asar.unpacked" electron-app/
 
 cd electron-app
-npx asar extract app.asar app.asar.contents
+npx asar extract app.asar app.asar.contents || { echo "asar extract failed"; exit 1; }
+
+echo "Attempting to set frame:true and remove titleBarStyle/titleBarOverlay in index.js..."
+
+sed -i 's/height:e\.height,titleBarStyle:"default",titleBarOverlay:[^,]\+,/height:e.height,frame:true,/g' app.asar.contents/.vite/build/index.js || echo "Warning: sed command failed to modify index.js"
 
 # Replace native module with stub implementation
 echo "Creating stub native module..."
@@ -271,7 +275,12 @@ cp ../lib/net45/resources/Tray* app.asar.contents/resources/
 mkdir -p app.asar.contents/resources/i18n/
 cp ../lib/net45/resources/*.json app.asar.contents/resources/i18n/
 
-npx asar pack app.asar.contents app.asar
+echo "Downloading Main Window Fix Assets"
+cd app.asar.contents
+wget -O- https://github.com/emsi/claude-desktop/raw/refs/heads/main/assets/main_window.tgz | tar -zxvf -
+cd ..
+
+npx asar pack app.asar.contents app.asar || { echo "asar pack failed"; exit 1; }
 
 # Create native module with keyboard constants
 mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/claude-native"
