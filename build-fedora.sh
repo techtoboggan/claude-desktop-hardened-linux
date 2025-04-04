@@ -11,11 +11,7 @@ is_fedora_based() {
     fi
     
     if [ -f "/etc/os-release" ]; then
-        grep -qi "ID_LIKE.*fedora\|ID.*fedora" /etc/os-release && return 0
-    fi
-    
-    if command -v dnf >/dev/null 2>&1; then
-        return 0
+        grep -qi "fedora" /etc/os-release && return 0
     fi
     
     # Not a Fedora-based system
