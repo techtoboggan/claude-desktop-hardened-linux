@@ -11,6 +11,8 @@ And now by me, via [Aaddrick's claude-desktop-debian](https://github.com/aaddric
 Supports MCP!
 ![image](https://github.com/user-attachments/assets/93080028-6f71-48bd-8e59-5149d148cd45)
 
+Location of the MCP-configuration file is: ~/.config/Claude/claude_desktop_config.json
+
 Supports the Ctrl+Alt+Space popup!
 ![image](https://github.com/user-attachments/assets/1deb4604-4c06-4e4b-b63f-7f6ef9ef28c1)
 
