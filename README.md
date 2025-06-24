@@ -81,7 +81,7 @@ claude-desktop
 
 ```
 
-Installation video here : https://www.youtube.com/watch?v=RsmBSwU_TcU
+Installation video here : https://youtu.be/dvU1yJsyJ5k
 
 Requirements:
 - Fedora 41 Linux distribution
