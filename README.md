@@ -1,3 +1,6 @@
+
+
+
 ***THIS IS AN UNOFFICIAL BUILD SCRIPT!***
 
 If you run into an issue with this build script, make an issue here. Don't bug Anthropic about it - they already have enough on their plates.
@@ -23,23 +26,62 @@ Supports the Tray menu! (Screenshot of running on KDE)
 
 ## 1. Fedora Package (New!)
 
-For Fedora-based distributions you can build and install Claude Desktop using the provided build script:
+For Fedora-based distributions you can build and install Claude Desktop using the provided build script (updated):
 
 ```bash
+sudo dnf install rpm-build
 # Clone this repository
 git clone https://github.com/bsneed/claude-desktop-fedora.git
 cd claude-desktop-fedora
 
-# Build the package
-sudo ./build-fedora.sh
-sudo dnf install build/electron-app/x86_64/claude-desktop_0.7.7-1.fc41.x86_64.rpm
+# Install the package
+# Check what file was actually created
+ls build/electron-app/x86_64/
 
-# The script will automatically:
-# - Check for and install required dependencies
-# - Download and extract resources from the Windows version
-# - Create a proper Fedora package
-# - Guide you through installation
+# Install using the correct filename (example - your version may differ)
+sudo dnf install build/electron-app/x86_64/claude-desktop-0.10.14-1.fc40.x86_64.rpm
+
+# Download standalone Electron
+# The installed Claude Desktop will have GTK conflicts with your system Electron. Download a clean Electron binary
+cd /tmp
+wget https://github.com/electron/electron/releases/download/v31.0.2/electron-v31.0.2-linux-x64.zip
+
+# Extract it
+unzip electron-v31.0.2-linux-x64.zip
+
+# Create directory and move all files
+sudo mkdir -p /opt/electron
+sudo cp -r /tmp/* /opt/electron/
+sudo chmod +x /opt/electron/electron
+
+# Fix the Claude Desktop Script The default script will try to use your system Electron. Replace it with one that uses the standalone version:
+
+# Backup the original script
+sudo cp /usr/bin/claude-desktop /usr/bin/claude-desktop.backup
+
+# Create the fixed script
+sudo tee /usr/bin/claude-desktop << 'EOF'
+#!/usr/bin/bash
+LOG_FILE="$HOME/claude-desktop-launcher.log"
+
+# Set environment to avoid GTK conflicts
+export GDK_BACKEND=x11
+export GTK_USE_PORTAL=0
+export ELECTRON_DISABLE_SECURITY_WARNINGS=true
+
+# Use the standalone electron installation
+/opt/electron/electron /usr/lib64/claude-desktop/app.asar --ozone-platform-hint=auto --enable-logging=file --log-file=$LOG_FILE --log-level=INFO --disable-gpu-sandbox --no-sandbox "$@"
+EOF
+
+# Make it executable
+sudo chmod +x /usr/bin/claude-desktop
+
+# Launch Claude Desktop
+claude-desktop
+
 ```
+
+Installation video here : https://youtu.be/dvU1yJsyJ5k
 
 Requirements:
 - Fedora 41 Linux distribution
