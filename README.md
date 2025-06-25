@@ -34,6 +34,9 @@ sudo dnf install rpm-build
 git clone https://github.com/bsneed/claude-desktop-fedora.git
 cd claude-desktop-fedora
 
+# Build the package
+sudo ./build-fedora.sh
+
 # Install the package
 # Check what file was actually created
 ls build/electron-app/x86_64/
