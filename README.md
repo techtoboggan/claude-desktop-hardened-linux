@@ -49,12 +49,9 @@ sudo dnf install build/electron-app/x86_64/claude-desktop-*.rpm
 cd /tmp
 wget https://github.com/electron/electron/releases/download/v37.0.0/electron-v37.0.0-linux-x64.zip
 
-# Extract it
-unzip electron-v37.0.0-linux-x64.zip
-
-# Create directory and move all files
-sudo mkdir -p /opt/electron
-sudo cp -r /tmp/* /opt/electron/
+# Extract into /opt
+sudo unzip electron-v37.0.0-linux-x64.zip -d /opt
+sudo mv /opt/electron-v37.0.0-linux-x64 /opt/electron
 sudo chmod +x /opt/electron/electron
 
 # Fix the Claude Desktop Script The default script will try to use your system Electron. Replace it with one that uses the standalone version:
