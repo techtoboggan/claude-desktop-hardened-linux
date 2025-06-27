@@ -81,9 +81,12 @@ echo "Checking dependencies..."
 DEPS_TO_INSTALL=""
 
 # Check system package dependencies
-for cmd in 7z wget wrestool icotool convert npx rpm rpmbuild; do
+for cmd in sqlite3 7z wget wrestool icotool convert npx rpm rpmbuild; do
     if ! check_command "$cmd"; then
         case "$cmd" in
+            "sqlite3")
+                DEPS_TO_INSTALL="$DEPS_TO_INSTALL sqlite3"
+                ;;
             "7z")
                 DEPS_TO_INSTALL="$DEPS_TO_INSTALL p7zip-plugins"
                 ;;
