@@ -8,6 +8,16 @@ reference/
 # Node modules
 node_modules/
 
+# Python cache
+__pycache__/
+*.pyc
+
+# Claude Code workspace
+.claude/
+
+# Tauri build artifacts
+src-tauri/
+
 # OS-specific files
 .DS_Store
 Thumbs.db

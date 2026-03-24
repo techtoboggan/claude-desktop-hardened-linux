@@ -1,8 +1,25 @@
 #!/bin/bash
 set -e
 
-# Update this URL when a new version of Claude Desktop is released
-CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Version pin — read from CLAUDE_VERSION (commit this file to update the pin).
+# Line 1 = version string, line 2 (optional) = SHA256 of the nupkg for verification.
+CLAUDE_VERSION_PINNED=""
+CLAUDE_NUPKG_SHA256=""
+if [ -f "$SCRIPT_DIR/CLAUDE_VERSION" ]; then
+    CLAUDE_VERSION_PINNED=$(sed -n '1p' "$SCRIPT_DIR/CLAUDE_VERSION" | tr -d '[:space:]')
+    CLAUDE_NUPKG_SHA256=$(sed -n '2p' "$SCRIPT_DIR/CLAUDE_VERSION" | tr -d '[:space:]')
+fi
+
+# Download URL — if pinned, use the specific version; otherwise download latest.
+if [ -n "$CLAUDE_VERSION_PINNED" ]; then
+    CLAUDE_DOWNLOAD_URL="https://downloads.claude.ai/releases/win32/x64/AnthropicClaude-${CLAUDE_VERSION_PINNED}-full.nupkg"
+    DOWNLOAD_AS_NUPKG=true
+else
+    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+    DOWNLOAD_AS_NUPKG=false
+fi
 
 # Inclusive check for Fedora-based system
 is_fedora_based() {
@@ -81,7 +98,7 @@ echo "Checking dependencies..."
 DEPS_TO_INSTALL=""
 
 # Check system package dependencies
-for cmd in sqlite3 7z wget wrestool icotool convert npx rpm rpmbuild; do
+for cmd in sqlite3 7z wget wrestool icotool convert npx rpm rpmbuild python3 curl; do
     if ! check_command "$cmd"; then
         case "$cmd" in
             "sqlite3")
@@ -107,6 +124,9 @@ for cmd in sqlite3 7z wget wrestool icotool convert npx rpm rpmbuild; do
                 ;;
             "rpmbuild")
                 DEPS_TO_INSTALL="$DEPS_TO_INSTALL rpmbuild"
+                ;;
+            "python3")
+                DEPS_TO_INSTALL="$DEPS_TO_INSTALL python3"
                 ;;
             "curl")
                 DEPS_TO_INSTALL="$DEPS_TO_INSTALL curl"
@@ -159,34 +179,52 @@ if ! command -v asar > /dev/null 2>&1; then
     npm install -g asar
 fi
 
-# Download Claude Windows installer
-echo "📥 Downloading Claude Desktop installer..."
-CLAUDE_EXE="$WORK_DIR/Claude-Setup-x64.exe"
-if ! curl -o "$CLAUDE_EXE" "$CLAUDE_DOWNLOAD_URL"; then
-    echo "❌ Failed to download Claude Desktop installer"
-    exit 1
+# Download Claude Desktop
+echo "📥 Downloading Claude Desktop..."
+cd "$WORK_DIR"
+if [ "$DOWNLOAD_AS_NUPKG" = true ]; then
+    NUPKG_FILE="$WORK_DIR/AnthropicClaude-${CLAUDE_VERSION_PINNED}-full.nupkg"
+    if ! curl -L -o "$NUPKG_FILE" "$CLAUDE_DOWNLOAD_URL"; then
+        echo "❌ Failed to download nupkg"
+        exit 1
+    fi
+    # Verify SHA256 if provided
+    if [ -n "$CLAUDE_NUPKG_SHA256" ]; then
+        ACTUAL_SHA=$(sha256sum "$NUPKG_FILE" | cut -d' ' -f1)
+        if [ "$ACTUAL_SHA" != "$CLAUDE_NUPKG_SHA256" ]; then
+            echo "❌ SHA256 mismatch for nupkg (expected $CLAUDE_NUPKG_SHA256, got $ACTUAL_SHA)"
+            exit 1
+        fi
+        echo "✓ SHA256 verified"
+    fi
+    VERSION="$CLAUDE_VERSION_PINNED"
+    echo "📋 Claude version: $VERSION (pinned)"
+else
+    CLAUDE_EXE="$WORK_DIR/Claude-Setup-x64.exe"
+    if ! curl -L -o "$CLAUDE_EXE" "$CLAUDE_DOWNLOAD_URL"; then
+        echo "❌ Failed to download Claude Desktop installer"
+        exit 1
+    fi
+    if ! 7z x -y "$CLAUDE_EXE"; then
+        echo "❌ Failed to extract installer"
+        exit 1
+    fi
+    NUPKG_FILE=$(find . -name "AnthropicClaude-*-full.nupkg" | head -1)
+    if [ -z "$NUPKG_FILE" ]; then
+        echo "❌ Could not find AnthropicClaude nupkg file"
+        exit 1
+    fi
+    VERSION=$(echo "$NUPKG_FILE" | grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full\.nupkg)')
+    echo "📋 Detected Claude version: $VERSION"
+    if [ -n "$CLAUDE_VERSION_PINNED" ] && [ "$VERSION" != "$CLAUDE_VERSION_PINNED" ]; then
+        echo "⚠️  WARNING: Downloaded version $VERSION differs from pinned $CLAUDE_VERSION_PINNED"
+        echo "   Patches may not apply correctly. Update CLAUDE_VERSION to pin this version."
+    fi
 fi
 echo "✓ Download complete"
 
 # Extract resources
-echo "📦 Extracting resources..."
-cd "$WORK_DIR"
-if ! 7z x -y "$CLAUDE_EXE"; then
-    echo "❌ Failed to extract installer"
-    exit 1
-fi
-
-# Find the nupkg file
-NUPKG_FILE=$(find . -name "AnthropicClaude-*-full.nupkg" | head -1)
-if [ -z "$NUPKG_FILE" ]; then
-    echo "❌ Could not find AnthropicClaude nupkg file"
-    exit 1
-fi
-
-# Extract the version from the nupkg filename
-VERSION=$(echo "$NUPKG_FILE" | grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full\.nupkg)')
-echo "📋 Detected Claude version: $VERSION"
-
+echo "📦 Extracting nupkg..."
 if ! 7z x -y "$NUPKG_FILE"; then
     echo "❌ Failed to extract nupkg"
     exit 1
@@ -236,112 +274,188 @@ cp -r "lib/net45/resources/app.asar.unpacked" electron-app/
 cd electron-app
 npx asar extract app.asar app.asar.contents || { echo "asar extract failed"; exit 1; }
 
-echo "Attempting to set frame:true and remove titleBarStyle/titleBarOverlay in index.js..."
+# Replace native module with enhanced Linux stub (with Cowork support)
+echo "🔧 Installing claude-native stub..."
+cp "$SCRIPT_DIR/stubs/claude-native/index.js" app.asar.contents/node_modules/claude-native/index.js
 
-sed -i 's/height:e\.height,titleBarStyle:"default",titleBarOverlay:[^,]\+,/height:e.height,frame:true,/g' app.asar.contents/.vite/build/index.js || echo "Warning: sed command failed to modify index.js"
+# Install Cowork stubs
+echo "🔧 Installing Cowork stubs..."
+mkdir -p app.asar.contents/node_modules/claude-swift-stub
+cp "$SCRIPT_DIR/stubs/claude-swift-stub/index.js" app.asar.contents/node_modules/claude-swift-stub/index.js
 
-# Replace native module with stub implementation
-echo "Creating stub native module..."
-cat > app.asar.contents/node_modules/claude-native/index.js << EOF
-// Stub implementation of claude-native using KeyboardKey enum values
-const KeyboardKey = {
-  Backspace: 43,
-  Tab: 280,
-  Enter: 261,
-  Shift: 272,
-  Control: 61,
-  Alt: 40,
-  CapsLock: 56,
-  Escape: 85,
-  Space: 276,
-  PageUp: 251,
-  PageDown: 250,
-  End: 83,
-  Home: 154,
-  LeftArrow: 175,
-  UpArrow: 282,
-  RightArrow: 262,
-  DownArrow: 81,
-  Delete: 79,
-  Meta: 187
-};
+mkdir -p app.asar.contents/node_modules/cowork
+for f in "$SCRIPT_DIR"/stubs/cowork/*.js; do
+    cp "$f" "app.asar.contents/node_modules/cowork/$(basename "$f")"
+done
 
-Object.freeze(KeyboardKey);
+# Run the Cowork platform gate patcher
+echo "🔧 Patching for Cowork enablement..."
+python3 "$SCRIPT_DIR/enable-cowork.py" app.asar.contents
 
-module.exports = {
-  getWindowsVersion: () => "10.0.0",
-  setWindowEffect: () => {},
-  removeWindowEffect: () => {},
-  getIsMaximized: () => false,
-  flashFrame: () => {},
-  clearFlashFrame: () => {},
-  showNotification: () => {},
-  setProgressBar: () => {},
-  clearProgressBar: () => {},
-  setOverlayIcon: () => {},
-  clearOverlayIcon: () => {},
-  KeyboardKey
-};
-EOF
-
-# Copy Tray icons
+# Copy Tray icons and invert RGB to white (Windows ships black template icons;
+# Linux system trays are dark, so we flip RGB channels while preserving alpha).
 mkdir -p app.asar.contents/resources
-cp ../lib/net45/resources/Tray* app.asar.contents/resources/
+cp ../lib/net45/resources/Tray* app.asar.contents/resources/ 2>/dev/null || true
+for tray_src in app.asar.contents/resources/Tray*.png; do
+    [ -f "$tray_src" ] || continue
+    convert "$tray_src" -channel RGB -negate "$tray_src" 2>/dev/null && \
+        echo "  Tray icon → white: $(basename "$tray_src")" || true
+done
+
+# Copy the 256×256 icon so it's available for window/dock injection at runtime
+if [ -f "$WORK_DIR/claude_6_256x256x32.png" ]; then
+    cp "$WORK_DIR/claude_6_256x256x32.png" app.asar.contents/resources/icon.png
+fi
 
 # Repackage app.asar
 mkdir -p app.asar.contents/resources/i18n/
 cp ../lib/net45/resources/*.json app.asar.contents/resources/i18n/
 
-echo "Downloading Main Window Fix Assets"
-cd app.asar.contents
-wget -O- https://github.com/emsi/claude-desktop/raw/refs/heads/main/assets/main_window.tgz | tar -zxvf -
-cd ..
+# Patch window decorations: titleBarStyle:"hidden" + titleBarOverlay for Linux CSD
+# (native close/min/max inside the app's content area, like Firefox on Linux)
+echo "🔧 Patching window decorations..."
+node "$SCRIPT_DIR/scripts/patch-window.js" app.asar.contents
+
+# Inject startup code: hide menu bar, set window icon, inject Claude icon into title bar
+echo "🔧 Injecting startup patches..."
+MAIN_JS="app.asar.contents/.vite/build/index.js"
+if [ -f "$MAIN_JS" ]; then
+    cat > /tmp/claude-prepend.js << 'PREPENDJS'
+const{app:_capp,Menu:_cMenu,nativeImage:_cNI}=require("electron");
+const _cPath=require("path");
+
+// Load icon once; resize to 48px for in-app title bar injection.
+const _iconPath=_cPath.join(__dirname,"..","..","resources","icon.png");
+const _iconFull=_cNI.createFromPath(_iconPath);
+const _iconSmall=_iconFull.isEmpty()?_iconFull:_iconFull.resize({width:48,height:48});
+const _iconDataUrl=_iconSmall.isEmpty()?null:_iconSmall.toDataURL();
+
+if(process.platform==="linux"){
+  // Block all menu-bar creation before any app code runs.
+  const _origSetMenu=_cMenu.setApplicationMenu.bind(_cMenu);
+  _cMenu.setApplicationMenu=()=>_origSetMenu(null);
+}
+
+_capp.on("ready",()=>{
+  _cMenu.setApplicationMenu(null);
+  try{if(!_iconFull.isEmpty()&&_capp.setIcon)_capp.setIcon(_iconFull);}catch(ex){}
+});
+
+_capp.on("browser-window-created",(e,w)=>{
+  try{if(!_iconFull.isEmpty())w.setIcon(_iconFull);}catch(ex){}
+
+  if(process.platform!=="linux"||!_iconDataUrl)return;
+
+  // CSS: fixed draggable icon wrapper top-left, 42×44px matching titleBarOverlay height.
+  const _css=[
+    "#_cld_icon{",
+      "position:fixed;top:0;left:0;",
+      "width:42px;height:44px;",
+      "z-index:2147483647;",
+      "display:flex;align-items:center;justify-content:center;",
+      "-webkit-app-region:drag;",
+      "user-select:none;box-sizing:border-box;padding:9px;",
+    "}",
+    "#_cld_icon img{",
+      "width:100%;height:100%;",
+      "pointer-events:none;-webkit-app-region:no-drag;",
+      "object-fit:contain;",
+      "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
+    "}",
+  ].join("");
+
+  // JS: wait for first top-left nav button, shift its container right, append icon.
+  const _js=[
+    "(function(){",
+      "if(document.getElementById('_cld_icon'))return;",
+      "const el=document.createElement('div');",
+      "el.id='_cld_icon';",
+      "const img=document.createElement('img');",
+      "img.src='",_iconDataUrl,"';",
+      "img.alt='Claude';",
+      "el.appendChild(img);",
+      "const place=()=>{",
+        "const all=Array.from(document.querySelectorAll('button,[role=button],[role=tab]'));",
+        "const tl=all.find(b=>{const r=b.getBoundingClientRect();",
+          "return r.top>=0&&r.top<52&&r.left>=0&&r.left<100&&r.width>0&&r.height>0;});",
+        "if(!tl)return false;",
+        "const p=tl.parentElement;",
+        "if(p&&!p.dataset.cldShifted){",
+          "p.dataset.cldShifted='1';",
+          "const pl=parseInt(getComputedStyle(p).paddingLeft)||0;",
+          "p.style.paddingLeft=(pl+44)+'px';",
+        "}",
+        "document.documentElement.appendChild(el);",
+        "return true;",
+      "};",
+      "if(!place()){",
+        "const obs=new MutationObserver(()=>{if(place())obs.disconnect();});",
+        "obs.observe(document.documentElement,{childList:true,subtree:true});",
+        "setTimeout(()=>obs.disconnect(),20000);",
+      "}",
+    "})();",
+  ].join("");
+
+  const inject=()=>{
+    const b=w.getBounds();
+    if(b.width<500||b.height<300)return;
+    w.webContents.insertCSS(_css).catch(()=>{});
+    w.webContents.executeJavaScript(_js).catch(()=>{});
+  };
+
+  w.webContents.on("dom-ready",inject);
+  w.webContents.on("did-navigate-in-page",inject);
+});
+PREPENDJS
+    cat /tmp/claude-prepend.js "$MAIN_JS" > /tmp/claude-combined.js
+    mv /tmp/claude-combined.js "$MAIN_JS"
+    rm -f /tmp/claude-prepend.js
+    echo "  Menu bar hidden + icon injection installed"
+fi
 
 npx asar pack app.asar.contents app.asar || { echo "asar pack failed"; exit 1; }
 
-# Create native module with keyboard constants
+# Install native module stub in unpacked directory
 mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/claude-native"
-cat > "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/claude-native/index.js" << EOF
-// Stub implementation of claude-native using KeyboardKey enum values
-const KeyboardKey = {
-  Backspace: 43,
-  Tab: 280,
-  Enter: 261,
-  Shift: 272,
-  Control: 61,
-  Alt: 40,
-  CapsLock: 56,
-  Escape: 85,
-  Space: 276,
-  PageUp: 251,
-  PageDown: 250,
-  End: 83,
-  Home: 154,
-  LeftArrow: 175,
-  UpArrow: 282,
-  RightArrow: 262,
-  DownArrow: 81,
-  Delete: 79,
-  Meta: 187
-};
+cp "$SCRIPT_DIR/stubs/claude-native/index.js" \
+   "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/claude-native/index.js"
 
-Object.freeze(KeyboardKey);
+# Install Cowork stubs in unpacked directory
+mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/claude-swift-stub"
+cp "$SCRIPT_DIR/stubs/claude-swift-stub/index.js" \
+   "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/claude-swift-stub/index.js"
 
-module.exports = {
-  getWindowsVersion: () => "10.0.0",
-  setWindowEffect: () => {},
-  removeWindowEffect: () => {},
-  getIsMaximized: () => false,
-  flashFrame: () => {},
-  clearFlashFrame: () => {},
-  showNotification: () => {},
-  setProgressBar: () => {},
-  clearProgressBar: () => {},
-  setOverlayIcon: () => {},
-  clearOverlayIcon: () => {},
-  KeyboardKey
-};
-EOF
+mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/cowork"
+for f in "$SCRIPT_DIR"/stubs/cowork/*.js; do
+    cp "$f" "$INSTALL_DIR/lib/$PACKAGE_NAME/app.asar.unpacked/node_modules/cowork/$(basename "$f")"
+done
+
+# Download and bundle Claude Code CLI
+echo "📥 Downloading Claude Code CLI..."
+CLAUDE_CLI_DIR="$INSTALL_DIR/lib/$PACKAGE_NAME/claude-code"
+mkdir -p "$CLAUDE_CLI_DIR"
+
+# Get the latest version from npm registry
+CLAUDE_CLI_VERSION=$(curl -s https://registry.npmjs.org/@anthropic-ai/claude-code/latest | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','latest'))" 2>/dev/null || echo "latest")
+echo "📋 Claude Code CLI version: $CLAUDE_CLI_VERSION"
+
+# Install Claude Code CLI to the bundle directory
+cd "$CLAUDE_CLI_DIR"
+npm init -y > /dev/null 2>&1
+npm install "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" --save > /dev/null 2>&1
+
+# Create a wrapper script for the bundled CLI
+mkdir -p "$INSTALL_DIR/bin"
+cat > "$INSTALL_DIR/bin/claude" << 'CLIEOF'
+#!/bin/bash
+# Claude Code CLI - bundled with Claude Desktop for Linux
+NODE_PATH="/usr/lib64/claude-desktop/claude-code/node_modules" \
+  exec node /usr/lib64/claude-desktop/claude-code/node_modules/@anthropic-ai/claude-code/cli.js "$@"
+CLIEOF
+chmod +x "$INSTALL_DIR/bin/claude"
+
+cd "$WORK_DIR/electron-app"
+echo "✓ Claude Code CLI bundled"
 
 # Copy app files
 cp app.asar "$INSTALL_DIR/lib/$PACKAGE_NAME/"
@@ -360,12 +474,37 @@ MimeType=x-scheme-handler/claude;
 StartupWMClass=Claude
 EOF
 
-# Create launcher script with Wayland flags and logging
-cat > "$INSTALL_DIR/bin/claude-desktop" << EOF
+# Create launcher script with Wayland detection, keyring support, and logging
+cat > "$INSTALL_DIR/bin/claude-desktop" << 'LAUNCHEREOF'
 #!/bin/bash
-LOG_FILE="\$HOME/claude-desktop-launcher.log"
-electron /usr/lib64/claude-desktop/app.asar --ozone-platform-hint=auto --enable-logging=file --log-file=\$LOG_FILE --log-level=INFO "\$@"
-EOF
+
+# Detect Wayland
+if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+    export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
+fi
+
+# Detect keyring provider via D-Bus for credential storage
+KEYRING_FLAG=""
+if command -v dbus-send >/dev/null 2>&1; then
+    if ! dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+        /org/freedesktop/DBus org.freedesktop.DBus.ListNames 2>/dev/null | \
+        grep -q "org.freedesktop.secrets"; then
+        KEYRING_FLAG="--password-store=basic"
+    fi
+else
+    KEYRING_FLAG="--password-store=basic"
+fi
+
+LOG_FILE="$HOME/claude-desktop-launcher.log"
+
+exec electron /usr/lib64/claude-desktop/app.asar \
+    --ozone-platform-hint=auto \
+    --enable-logging=file \
+    --log-file="$LOG_FILE" \
+    --log-level=INFO \
+    $KEYRING_FLAG \
+    "$@"
+LAUNCHEREOF
 chmod +x "$INSTALL_DIR/bin/claude-desktop"
 
 # Create RPM spec file
@@ -377,11 +516,13 @@ Summary:        Claude Desktop for Linux
 License:        Proprietary
 URL:            https://www.anthropic.com
 BuildArch:      ${ARCHITECTURE}
-Requires:       nodejs >= 12.0.0, npm, p7zip
+Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils
+Recommends:     qemu-kvm, bubblewrap, socat, gnome-keyring
 
 %description
 Claude is an AI assistant from Anthropic.
-This package provides the desktop interface for Claude.
+This package provides the desktop interface for Claude with Cowork
+(Local Agent Mode) support for Linux. Includes bundled Claude Code CLI.
 
 %install
 mkdir -p %{buildroot}/usr/lib64/%{name}
@@ -397,6 +538,7 @@ cp -r ${INSTALL_DIR}/share/icons/* %{buildroot}/usr/share/icons/
 
 %files
 %{_bindir}/claude-desktop
+%{_bindir}/claude
 %{_libdir}/%{name}
 %{_datadir}/applications/claude-desktop.desktop
 %{_datadir}/icons/hicolor/*/apps/claude-desktop.png
@@ -407,6 +549,9 @@ gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor || :
 # Force icon theme cache rebuild
 touch -h %{_datadir}/icons/hicolor >/dev/null 2>&1 || :
 update-desktop-database %{_datadir}/applications || :
+
+# Ensure Claude Code CLI wrapper is executable
+chmod +x %{_bindir}/claude 2>/dev/null || :
 
 # Set correct permissions for chrome-sandbox
 echo "Setting chrome-sandbox permissions..."

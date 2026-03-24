@@ -1,0 +1,7 @@
+{
+  "name": "cowork",
+  "version": "0.0.1",
+  "description": "Cowork (Local Agent Mode) Linux stub for Claude Desktop",
+  "main": "index.js",
+  "private": true
+}

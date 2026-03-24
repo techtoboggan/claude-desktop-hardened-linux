@@ -1,0 +1,7 @@
+{
+  "name": "claude-swift-stub",
+  "version": "0.0.1",
+  "description": "Linux stub for @ant/claude-swift native addon",
+  "main": "index.js",
+  "private": true
+}

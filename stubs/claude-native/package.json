@@ -1,0 +1,7 @@
+{
+  "name": "claude-native",
+  "version": "0.0.1",
+  "description": "Linux stub for claude-native Windows addon",
+  "main": "index.js",
+  "private": true
+}
