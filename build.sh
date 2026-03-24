@@ -21,22 +21,17 @@ else
     DOWNLOAD_AS_NUPKG=false
 fi
 
-# Inclusive check for Fedora-based system
-is_fedora_based() {
-    if [ -f "/etc/fedora-release" ]; then
-        return 0
-    fi
-    
-    if [ -f "/etc/os-release" ]; then
-        grep -qi "fedora" /etc/os-release && return 0
-    fi
-    
-    # Not a Fedora-based system
+# Check for RPM-based system (Fedora, RHEL, CentOS, etc.)
+is_rpm_based() {
+    command -v rpm &>/dev/null && command -v rpmbuild &>/dev/null && return 0
+    [ -f "/etc/fedora-release" ] && return 0
+    [ -f "/etc/redhat-release" ] && return 0
+    grep -qi "fedora\|rhel\|centos\|rocky\|alma" /etc/os-release 2>/dev/null && return 0
     return 1
 }
 
-if ! is_fedora_based; then
-    echo "❌ This script requires a Fedora-based Linux distribution"
+if ! is_rpm_based; then
+    echo "❌ This script requires an RPM-based Linux distribution (Fedora, RHEL, CentOS, Rocky, Alma)"
     exit 1
 fi
 
@@ -80,7 +75,7 @@ fi
 # Print system information
 echo "System Information:"
 echo "Distribution: $(cat /etc/os-release | grep "PRETTY_NAME" | cut -d'"' -f2)"
-echo "Fedora version: $(cat /etc/fedora-release)"
+[ -f /etc/fedora-release ] && echo "Distro: $(cat /etc/fedora-release)" || echo "Distro: $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2)"
 
 # Function to check if a command exists
 check_command() {
@@ -161,13 +156,13 @@ DESCRIPTION="Claude Desktop for Linux"
 
 # Create working directories
 WORK_DIR="$(pwd)/build"
-FEDORA_ROOT="$WORK_DIR/fedora-package"
-INSTALL_DIR="$FEDORA_ROOT/usr"
+PKG_ROOT="$WORK_DIR/package"
+INSTALL_DIR="$PKG_ROOT/usr"
 
 # Clean previous build
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
-mkdir -p "$FEDORA_ROOT/FEDORA"
+mkdir -p "$PKG_ROOT"
 mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME"
 mkdir -p "$INSTALL_DIR/share/applications"
 mkdir -p "$INSTALL_DIR/share/icons"
