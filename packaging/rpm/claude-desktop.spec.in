@@ -1,6 +1,6 @@
 Name:           claude-desktop
 Version:        @@VERSION@@
-Release:        1%{?dist}
+Release:        1
 Summary:        Claude Desktop for Linux
 License:        Proprietary
 AutoReqProv:    no

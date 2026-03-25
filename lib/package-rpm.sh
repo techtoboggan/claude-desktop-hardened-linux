@@ -6,9 +6,6 @@ set_lib_dir() {
 }
 
 build_package() {
-    local DISTRIBUTION
-    DISTRIBUTION=$(rpm --eval %{?dist})
-
     log_step "📦" "Building RPM package..."
 
     # Generate spec from template
@@ -27,7 +24,7 @@ build_package() {
     mkdir -p "${WORK_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
     cd "$WORK_DIR/electron-app"
-    RPM_FILE="$(pwd)/${ARCHITECTURE}/claude-desktop-${VERSION}-1${DISTRIBUTION}.$(uname -m).rpm"
+    RPM_FILE="$(pwd)/${ARCHITECTURE}/claude-desktop-${VERSION}-1.$(uname -m).rpm"
     if rpmbuild -bb \
         --define "_topdir ${WORK_DIR}" \
         --define "_rpmdir $(pwd)" \

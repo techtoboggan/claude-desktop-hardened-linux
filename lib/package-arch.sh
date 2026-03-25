@@ -26,9 +26,16 @@ build_package() {
         -e "s|@@SHA256@@|${CLAUDE_NUPKG_SHA256:-SKIP}|g" \
         "$SCRIPT_DIR/packaging/arch/PKGBUILD.in" > "$ARCH_ROOT/PKGBUILD"
 
-    # Build the package
+    # Build the package (makepkg refuses to run as root, so use a temp user in CI)
     cd "$ARCH_ROOT"
-    if makepkg -f --nodeps 2>/dev/null; then
+    local MAKEPKG_CMD="makepkg -f --nodeps"
+    if [ "$EUID" -eq 0 ]; then
+        # Running as root (CI container) — create a temp user for makepkg
+        useradd -m _builduser 2>/dev/null || true
+        chown -R _builduser:_builduser "$ARCH_ROOT"
+        MAKEPKG_CMD="su _builduser -c 'makepkg -f --nodeps'"
+    fi
+    if eval "$MAKEPKG_CMD" 2>/dev/null; then
         local PKG_FILE
         PKG_FILE=$(ls claude-desktop-*.pkg.tar.* 2>/dev/null | head -1)
         if [ -n "$PKG_FILE" ]; then
