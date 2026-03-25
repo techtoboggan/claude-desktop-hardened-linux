@@ -35,11 +35,12 @@ jobs:
     container: ubuntu:24.04
     steps:
       - name: Install git
-        run: apt-get update -qq && apt-get install -y git
+        run: apt-get update -qq && apt-get install -y -qq git sudo
 
       - uses: actions/checkout@v4
 
       - name: Build DEB
+        shell: bash
         run: FORMAT=deb ./build.sh
 
       - uses: actions/upload-artifact@v4
