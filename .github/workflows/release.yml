@@ -18,7 +18,11 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -26,7 +30,6 @@ jobs:
         id: version
         run: |
           VERSION=$(head -1 CLAUDE_VERSION | tr -d '[:space:]')
-          # Count commits since last tag for this version, use as build number
           LAST_TAG=$(git tag -l "v${VERSION}-*" --sort=-v:refname | head -1)
           if [ -n "$LAST_TAG" ]; then
             BUILD=$(( $(echo "$LAST_TAG" | grep -oP '\d+$') + 1 ))
@@ -58,13 +61,13 @@ jobs:
       - name: Install git
         run: dnf install -y git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Build RPM
         shell: bash
         run: FORMAT=rpm ./build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rpm-package
           path: build/electron-app/**/*.rpm
@@ -78,13 +81,13 @@ jobs:
       - name: Install git
         run: apt-get update -qq && apt-get install -y -qq git sudo
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Build DEB
         shell: bash
         run: FORMAT=deb ./build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deb-package
           path: build/electron-app/**/*.deb
@@ -98,40 +101,66 @@ jobs:
       - name: Install git
         run: pacman -Sy --noconfirm git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Build Arch package
         shell: bash
         run: FORMAT=arch ./build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: arch-package
           path: |
             build/electron-app/**/*.pkg.tar.*
             build/electron-app/**/PKGBUILD
 
-  release:
-    needs: [check-version, build-rpm, build-deb, build-arch]
+  sbom:
+    needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          npm install -g @cyclonedx/cdxgen@11
+          cdxgen -o sbom.json --spec-version 1.5 .
+          echo "SBOM: $(jq '.components | length' sbom.json) components"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: sbom.json
+
+  release:
+    needs: [check-version, build-rpm, build-deb, build-arch, sbom]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Create tag
         run: |
           git tag ${{ needs.check-version.outputs.tag }}
           git push origin ${{ needs.check-version.outputs.tag }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
 
       - name: List artifacts
-        run: find artifacts -type f | head -20
+        run: find artifacts -type f | head -30
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           tag_name: ${{ needs.check-version.outputs.tag }}
           name: Claude Desktop ${{ needs.check-version.outputs.version }} (build ${{ needs.check-version.outputs.tag }})
@@ -161,10 +190,17 @@ jobs:
             - MCP support
             - System tray integration
             - Native Wayland support
+
+            ### Supply chain security
+            - SBOM (CycloneDX) attached as `sbom.json`
+            - All CI actions pinned to commit SHAs
+            - Source scanned for trojan source attacks and malware
+            - nupkg SHA256 verified against pin in `CLAUDE_VERSION`
           files: |
             artifacts/**/*.rpm
             artifacts/**/*.deb
             artifacts/**/*.pkg.tar.*
             artifacts/**/PKGBUILD
+            artifacts/sbom/sbom.json
           draft: false
           prerelease: false
