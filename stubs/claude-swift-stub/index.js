@@ -28,7 +28,7 @@ const SESSION_BASE = path.join(
 );
 
 const CLAUDE_BINARY_SEARCH_PATHS = [
-  '/usr/lib64/claude-desktop/claude-code/claude',
+  '/usr/bin/claude',
   '/usr/local/bin/claude',
   path.join(os.homedir(), '.local', 'bin', 'claude'),
   path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
@@ -48,6 +48,7 @@ const ENV_ALLOWLIST = new Set([
 // Allowed binary path prefixes (prevent arbitrary command execution)
 const BINARY_PATH_ALLOWLIST = [
   '/usr/lib64/claude-desktop/',
+  '/usr/lib/claude-desktop/',
   '/usr/local/bin/',
   '/usr/bin/',
   path.join(os.homedir(), '.local', 'bin') + '/',
@@ -141,6 +142,16 @@ function translatePath(vmPath) {
     return path.join(SESSION_BASE, 'sessions', sessionName, 'mnt', rest);
   }
 
+  // /sessions/<name> (no /mnt/) — map to session base dir
+  const vmSessionBase = vmPath.match(/^\/sessions\/([^/]+)(\/.*)?$/);
+  if (vmSessionBase) {
+    const [, sessionName, rest] = vmSessionBase;
+    const translated = path.join(SESSION_BASE, 'sessions', sessionName, rest || '');
+    // Ensure directory exists
+    try { fs.mkdirSync(translated, { recursive: true }); } catch (_) {}
+    return translated;
+  }
+
   // /home/user/... paths pass through unchanged
   return vmPath;
 }
@@ -172,15 +183,24 @@ function isPathSafe(p) {
  * Priority: bubblewrap > host (KVM support can be added later)
  */
 function detectBackend() {
-  // Check for bubblewrap
-  try {
-    require('child_process').execFileSync('which', ['bwrap'], { encoding: 'utf8' });
-    return 'bubblewrap';
-  } catch (_) {
-    // not available
+  // Check for bubblewrap at known paths (don't rely on PATH in Electron)
+  const bwrapPaths = ['/usr/bin/bwrap', '/usr/local/bin/bwrap'];
+  for (const p of bwrapPaths) {
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      return 'bubblewrap';
+    } catch (_) {}
   }
 
   return 'host';
+}
+
+/** Resolve full path to bwrap binary. */
+function resolveBwrap() {
+  for (const p of ['/usr/bin/bwrap', '/usr/local/bin/bwrap']) {
+    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch (_) {}
+  }
+  return 'bwrap'; // fallback to PATH
 }
 
 /**
@@ -194,14 +214,20 @@ function buildBwrapCommand(claudeBinary, args, workDir, env) {
     '--tmpfs', '/tmp',
     '--bind', workDir, workDir,         // Writable working directory
     '--bind', SESSION_BASE, SESSION_BASE, // Writable sessions dir
-    '--unshare-net',                     // No network (Claude Code uses its own)
+    // NOTE: Do NOT use --unshare-net — Claude Code needs HTTPS to reach the Anthropic API
     '--die-with-parent',
   ];
 
-  // Allow write to home config dirs
-  const configDir = path.join(os.homedir(), '.config', 'Claude');
-  if (fs.existsSync(configDir)) {
-    bwrapArgs.push('--bind', configDir, configDir);
+  // Allow write to config dirs Claude Code needs
+  const writableDirs = [
+    path.join(os.homedir(), '.config', 'Claude'),
+    path.join(os.homedir(), '.claude'),
+    path.join(os.homedir(), '.local', 'share'),
+  ];
+  for (const dir of writableDirs) {
+    if (fs.existsSync(dir)) {
+      bwrapArgs.push('--bind', dir, dir);
+    }
   }
 
   // Block sensitive directories
@@ -215,7 +241,7 @@ function buildBwrapCommand(claudeBinary, args, workDir, env) {
 
   bwrapArgs.push('--', claudeBinary, ...args);
 
-  return { command: 'bwrap', args: bwrapArgs, env };
+  return { command: resolveBwrap(), args: bwrapArgs, env };
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +251,7 @@ function buildBwrapCommand(claudeBinary, args, workDir, env) {
 class SwiftAddonStub {
   constructor() {
     this._processes = new Map();  // sessionId → child process
+    this._eventCallbacks = {};    // registered via setEventCallbacks
     this._stdinHistory = new Map();
     this._backend = detectBackend();
     this._claudeBinary = null;
@@ -253,34 +280,32 @@ class SwiftAddonStub {
   }
 
   /**
-   * Spawn a Claude Code CLI process for a cowork session.
+   * Spawn a Claude Code process.
    *
-   * @param {string} sessionId - Unique session identifier
-   * @param {string[]} args - CLI arguments
-   * @param {object} options - Spawn options
-   * @param {string} options.cwd - Working directory
-   * @param {object} options.env - Extra environment variables
-   * @param {function} options.onStdout - stdout callback
-   * @param {function} options.onStderr - stderr callback
-   * @param {function} options.onExit - exit callback
-   * @returns {object} Process handle
+   * The app calls:
+   *   vm.spawn(sessionId, processName, command, args, cwd, env,
+   *            additionalMounts, isResume, allowedDomains, sharedCwdPath, oneShot)
    */
-  spawn(sessionId, args = [], options = {}) {
+  spawn(sessionId, processName, command, args = [], cwd, env = {},
+        additionalMounts, isResume, allowedDomains, sharedCwdPath, oneShot) {
     const claudeBinary = this._getClaudeBinary();
 
+    // args comes from the app as an array of CLI arguments
+    const safeArgs = Array.isArray(args) ? args : [];
+
     // Translate VM paths in arguments
-    const translatedArgs = args.map(arg => translatePath(arg));
+    const translatedArgs = safeArgs.map(arg => translatePath(arg));
 
     // Set up working directory
-    const workDir = translatePath(options.cwd) || os.homedir();
+    const workDir = translatePath(cwd) || os.homedir();
 
     // Filter environment
-    const env = filterEnv(options.env || {});
+    const filteredEnv = filterEnv(env || {});
 
     // Translate VM paths in environment values
-    for (const [key, value] of Object.entries(env)) {
+    for (const [key, value] of Object.entries(filteredEnv)) {
       if (typeof value === 'string') {
-        env[key] = translatePath(value);
+        filteredEnv[key] = translatePath(value);
       }
     }
 
@@ -291,9 +316,9 @@ class SwiftAddonStub {
     let child;
 
     if (this._backend === 'bubblewrap') {
-      const { command, args: bwrapArgs, env: bwrapEnv } =
-        buildBwrapCommand(claudeBinary, translatedArgs, workDir, env);
-      child = spawn(command, bwrapArgs, {
+      const { command: bwrapCmd, args: bwrapArgs, env: bwrapEnv } =
+        buildBwrapCommand(claudeBinary, translatedArgs, workDir, filteredEnv);
+      child = spawn(bwrapCmd, bwrapArgs, {
         cwd: workDir,
         env: bwrapEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -302,7 +327,7 @@ class SwiftAddonStub {
       // Host backend — direct execution
       child = spawn(claudeBinary, translatedArgs, {
         cwd: workDir,
-        env,
+        env: filteredEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     }
@@ -310,23 +335,29 @@ class SwiftAddonStub {
     this._processes.set(sessionId, child);
     this._stdinHistory.set(sessionId, []);
 
-    if (options.onStdout) {
-      child.stdout.on('data', data => options.onStdout(data.toString()));
+    const cbs = this._eventCallbacks || {};
+
+    if (cbs.onStdout) {
+      child.stdout.on('data', data => cbs.onStdout(sessionId, data.toString()));
     }
-    if (options.onStderr) {
-      child.stderr.on('data', data => options.onStderr(data.toString()));
+    if (cbs.onStderr) {
+      child.stderr.on('data', data => cbs.onStderr(sessionId, data.toString()));
     }
-    if (options.onExit) {
-      child.on('exit', (code, signal) => {
-        this._processes.delete(sessionId);
-        this._stdinHistory.delete(sessionId);
-        options.onExit(code, signal);
-      });
-    }
+
+    child.on('exit', (code, signal) => {
+      this._processes.delete(sessionId);
+      this._stdinHistory.delete(sessionId);
+      if (cbs.onExit) {
+        cbs.onExit(sessionId, code, signal, 'exit');
+      }
+    });
 
     child.on('error', (err) => {
       console.error(`[cowork-linux] Process error for session ${sessionId}:`, err.message);
       this._processes.delete(sessionId);
+      if (cbs.onError) {
+        cbs.onError(sessionId, err.message, err.stack);
+      }
     });
 
     return {
@@ -353,9 +384,9 @@ class SwiftAddonStub {
       proc.kill(signal);
       this._processes.delete(sessionId);
       this._stdinHistory.delete(sessionId);
-      return true;
     }
-    return false;
+    // App expects kill() to return a Promise (calls .catch() on it)
+    return Promise.resolve(true);
   }
 
   /**
@@ -366,9 +397,9 @@ class SwiftAddonStub {
     if (proc && proc.stdin && !proc.stdin.destroyed) {
       proc.stdin.write(data);
       this._stdinHistory.get(sessionId)?.push(data);
-      return true;
     }
-    return false;
+    // App expects a Promise (calls .catch() on it)
+    return Promise.resolve(true);
   }
 
   /**
@@ -485,7 +516,7 @@ class SwiftAddonStub {
    */
   addApprovedOauthToken(_token) {
     // No-op: tokens are passed via environment variable CLAUDE_CODE_OAUTH_TOKEN
-    return true;
+    return Promise.resolve(true);
   }
 
   /**
@@ -592,26 +623,112 @@ class SwiftAddonStub {
 
 const stubInstance = new SwiftAddonStub();
 
-module.exports = {
-  SwiftAddonStub,
-  default: stubInstance,
-  // Re-export individual methods bound to the singleton for convenience
-  spawn: stubInstance.spawn.bind(stubInstance),
-  kill: stubInstance.kill.bind(stubInstance),
-  writeStdin: stubInstance.writeStdin.bind(stubInstance),
-  readFile: stubInstance.readFile.bind(stubInstance),
-  writeFile: stubInstance.writeFile.bind(stubInstance),
-  mountPath: stubInstance.mountPath.bind(stubInstance),
-  openFile: stubInstance.openFile.bind(stubInstance),
-  revealFile: stubInstance.revealFile.bind(stubInstance),
-  startVM: stubInstance.startVM.bind(stubInstance),
-  stopVM: stubInstance.stopVM.bind(stubInstance),
-  download: stubInstance.download.bind(stubInstance),
-  getDownloadStatus: stubInstance.getDownloadStatus.bind(stubInstance),
-  isRunning: stubInstance.isRunning.bind(stubInstance),
-  isGuestConnected: stubInstance.isGuestConnected.bind(stubInstance),
-  checkVirtualMachinePlatform: stubInstance.checkVirtualMachinePlatform.bind(stubInstance),
-  addApprovedOauthToken: stubInstance.addApprovedOauthToken.bind(stubInstance),
-  setYukonSilverConfig: stubInstance.setYukonSilverConfig.bind(stubInstance),
-  getBackend: stubInstance.getBackend.bind(stubInstance),
+/**
+ * Wrap a function so its return value is always a Promise.
+ * The app's eipc framework calls .catch() on every method result.
+ */
+function promisify(fn) {
+  return function (...args) {
+    try {
+      const result = fn.apply(this, args);
+      return result instanceof Promise ? result : Promise.resolve(result);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Module shape expected by Claude Desktop
+//
+// The app loads this module via:
+//   const mod = (await import("@ant/claude-swift")).default
+//
+// It then accesses:
+//   mod.vm   — VM/session lifecycle (spawn, kill, writeStdin, startVM, etc.)
+//   mod.desktop — desktop integration (getOpenWindows, captureScreenshot, etc.)
+//
+// The eipc framework (typed IPC) calls into these objects from the main process.
+// ---------------------------------------------------------------------------
+
+const moduleExport = {
+  // .vm — the primary interface used by bi() and all session/VM handlers.
+  // All methods are promisified because the eipc framework calls .catch() on results.
+  vm: {
+    spawn: promisify(stubInstance.spawn.bind(stubInstance)),
+    kill: promisify(stubInstance.kill.bind(stubInstance)),
+    writeStdin: promisify(stubInstance.writeStdin.bind(stubInstance)),
+    readFile: promisify(stubInstance.readFile.bind(stubInstance)),
+    writeFile: promisify(stubInstance.writeFile.bind(stubInstance)),
+    mountPath: promisify(stubInstance.mountPath.bind(stubInstance)),
+    openFile: promisify(stubInstance.openFile.bind(stubInstance)),
+    revealFile: promisify(stubInstance.revealFile.bind(stubInstance)),
+    listDirectory: promisify(stubInstance.listDirectory.bind(stubInstance)),
+    startVM: promisify(stubInstance.startVM.bind(stubInstance)),
+    stopVM: promisify(stubInstance.stopVM.bind(stubInstance)),
+    download: promisify(stubInstance.download.bind(stubInstance)),
+    getDownloadStatus: promisify(stubInstance.getDownloadStatus.bind(stubInstance)),
+    isRunning: promisify(stubInstance.isRunning.bind(stubInstance)),
+    isProcessRunning: promisify(function(sessionId) {
+      const running = stubInstance._processes.has(sessionId);
+      return { running, exitCode: running ? undefined : 0 };
+    }),
+    isGuestConnected: promisify(stubInstance.isGuestConnected.bind(stubInstance)),
+    checkVirtualMachinePlatform: promisify(stubInstance.checkVirtualMachinePlatform.bind(stubInstance)),
+    enableVirtualMachinePlatform: promisify(stubInstance.enableVirtualMachinePlatform.bind(stubInstance)),
+    addApprovedOauthToken: promisify(stubInstance.addApprovedOauthToken.bind(stubInstance)),
+    setYukonSilverConfig: promisify(stubInstance.setYukonSilverConfig.bind(stubInstance)),
+    installSdk: promisify(stubInstance.installSdk.bind(stubInstance)),
+    // Event callbacks — synchronous, NOT promisified (called once at init, not via eipc)
+    setEventCallbacks(onStdout, onStderr, onExit, onError, onNetworkStatus, onApiReachability, onStartupStep) {
+      stubInstance._eventCallbacks = { onStdout, onStderr, onExit, onError, onNetworkStatus, onApiReachability, onStartupStep };
+    },
+    // Stubs for debug/dev features
+    isDebugLoggingEnabled() { return false; },
+    setDebugLogging(_enabled) {},
+    showDebugWindow() { return Promise.resolve(); },
+    hideDebugWindow() { return Promise.resolve(); },
+    // VM lifecycle (no-ops on Linux — direct execution)
+    deleteAndReinstall: promisify(stubInstance.deleteAndReinstall.bind(stubInstance)),
+    configure() { return Promise.resolve(); },
+    createVM() { return Promise.resolve(); },
+  },
+
+  // .desktop — desktop integration for computer use features
+  desktop: {
+    getOpenWindows: stubInstance.getOpenWindows.bind(stubInstance),
+    captureScreenshot: stubInstance.captureScreenshot.bind(stubInstance),
+    getOpenDocuments() { return []; },
+  },
 };
+
+// When the app does `(await import("@ant/claude-swift")).default`, ESM-from-CJS
+// wrapping makes `.default` === `module.exports`. So module.exports itself must
+// have `.vm` and `.desktop` at the top level.
+//
+// When cowork stubs do `require("@ant/claude-swift")`, they also get module.exports
+// directly, so `.default`, `.spawn`, etc. remain accessible for those consumers.
+
+module.exports = moduleExport;
+
+// Also attach flat convenience exports for require() consumers (cowork stubs)
+module.exports.SwiftAddonStub = SwiftAddonStub;
+module.exports.default = moduleExport;
+module.exports.spawn = stubInstance.spawn.bind(stubInstance);
+module.exports.kill = stubInstance.kill.bind(stubInstance);
+module.exports.writeStdin = stubInstance.writeStdin.bind(stubInstance);
+module.exports.readFile = stubInstance.readFile.bind(stubInstance);
+module.exports.writeFile = stubInstance.writeFile.bind(stubInstance);
+module.exports.mountPath = stubInstance.mountPath.bind(stubInstance);
+module.exports.openFile = stubInstance.openFile.bind(stubInstance);
+module.exports.revealFile = stubInstance.revealFile.bind(stubInstance);
+module.exports.startVM = stubInstance.startVM.bind(stubInstance);
+module.exports.stopVM = stubInstance.stopVM.bind(stubInstance);
+module.exports.download = stubInstance.download.bind(stubInstance);
+module.exports.getDownloadStatus = stubInstance.getDownloadStatus.bind(stubInstance);
+module.exports.isRunning = stubInstance.isRunning.bind(stubInstance);
+module.exports.isGuestConnected = stubInstance.isGuestConnected.bind(stubInstance);
+module.exports.checkVirtualMachinePlatform = stubInstance.checkVirtualMachinePlatform.bind(stubInstance);
+module.exports.addApprovedOauthToken = stubInstance.addApprovedOauthToken.bind(stubInstance);
+module.exports.setYukonSilverConfig = stubInstance.setYukonSilverConfig.bind(stubInstance);
+module.exports.getBackend = stubInstance.getBackend.bind(stubInstance);

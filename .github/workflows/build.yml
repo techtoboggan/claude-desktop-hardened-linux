@@ -1,0 +1,53 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: fedora
+            container: fedora:latest
+            format: rpm
+          - distro: ubuntu
+            container: ubuntu:24.04
+            format: deb
+          - distro: archlinux
+            container: archlinux:latest
+            format: arch
+
+    runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
+
+    steps:
+      - name: Install git (container may not have it)
+        run: |
+          if command -v dnf &>/dev/null; then
+            dnf install -y git
+          elif command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y git
+          elif command -v pacman &>/dev/null; then
+            pacman -Sy --noconfirm git
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.format }} package
+        run: FORMAT=${{ matrix.format }} ./build.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-desktop-${{ matrix.format }}-${{ matrix.distro }}
+          path: |
+            build/electron-app/**/*.rpm
+            build/electron-app/**/*.deb
+            build/electron-app/**/*.pkg.tar.*
+            build/electron-app/**/PKGBUILD
+          if-no-files-found: warn

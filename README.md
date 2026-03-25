@@ -21,26 +21,54 @@ Builds and installs Claude Desktop on Linux from the official Windows release, w
 
 ---
 
+## Supported Distros
+
+| Family | Distros | Package |
+|--------|---------|---------|
+| RPM | Fedora, RHEL, CentOS, Rocky Linux, AlmaLinux | `.rpm` |
+| DEB | Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` |
+| Arch | Arch Linux, Manjaro, EndeavourOS | `.pkg.tar.zst` |
+
+Pre-built packages are available on the [Releases](https://github.com/techtoboggan/claude-desktop-linux/releases) page.
+
 ## Requirements
 
-- RPM-based distro: Fedora, RHEL, CentOS, Rocky Linux, AlmaLinux
 - Node.js >= 18.0.0 and npm
 - Root/sudo access
 
 ## Installation
 
-```bash
-# Install build deps
-sudo dnf install rpm-build
+### From GitHub Releases (recommended)
 
-# Clone and build
+Download the latest package for your distro from [Releases](https://github.com/techtoboggan/claude-desktop-linux/releases), then:
+
+```bash
+# Fedora/RHEL
+sudo dnf install claude-desktop-*.rpm
+
+# Debian/Ubuntu
+sudo dpkg -i claude-desktop_*.deb && sudo apt-get install -f
+
+# Arch Linux
+sudo pacman -U claude-desktop-*.pkg.tar.zst
+```
+
+### Build from source
+
+```bash
 git clone https://github.com/techtoboggan/claude-desktop-linux.git
 cd claude-desktop-linux
+
+# Auto-detects your distro and builds the right package
 sudo ./build.sh
 
-# Install the RPM
-sudo dnf install build/electron-app/$(uname -m)/claude-desktop-*.rpm
+# Or specify explicitly:
+# sudo FORMAT=rpm ./build.sh
+# sudo FORMAT=deb ./build.sh
+# sudo FORMAT=arch ./build.sh
 ```
+
+The build script installs dependencies automatically via your package manager.
 
 ### Electron binary
 
@@ -84,9 +112,10 @@ Claude Desktop ships as a Windows `.exe` installer containing an Electron app in
 2. Extracts the app and replaces platform-specific native modules with Linux stubs
 3. Patches the app for Linux window decorations (CSD) and tray icons
 4. Enables Cowork by patching the platform-gating code in the minified JS
-5. Injects startup code for menu bar removal and window icon
-6. Bundles the Claude Code CLI
-7. Repackages everything as an RPM
+5. Patches the Claude Code binary manager to find system-installed CLI on Linux
+6. Injects startup code for menu bar removal and window icon
+7. Bundles the Claude Code CLI
+8. Packages as RPM, DEB, or Arch package
 
 ### Cowork on Linux
 
@@ -96,7 +125,6 @@ Instead of running a VM (as on macOS/Windows), Cowork on Linux spawns the Claude
 
 ## Other distros
 
-- **Debian/Ubuntu**: [aaddrick/claude-desktop-debian](https://github.com/aaddrick/claude-desktop-debian)
 - **NixOS**: [k3d3/claude-desktop-linux-flake](https://github.com/k3d3/claude-desktop-linux-flake)
 
 ---
