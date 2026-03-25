@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g., v1.1.7714-1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Install git
+        run: dnf install -y git
+
+      - uses: actions/checkout@v4
+
+      - name: Build RPM
+        run: FORMAT=rpm ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: build/electron-app/**/*.rpm
+
+  build-deb:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y git
+
+      - uses: actions/checkout@v4
+
+      - name: Build DEB
+        run: FORMAT=deb ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: build/electron-app/**/*.deb
+
+  build-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install git
+        run: pacman -Sy --noconfirm git
+
+      - uses: actions/checkout@v4
+
+      - name: Build Arch package
+        run: FORMAT=arch ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: |
+            build/electron-app/**/*.pkg.tar.*
+            build/electron-app/**/PKGBUILD
+
+  release:
+    needs: [build-rpm, build-deb, build-arch]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | head -20
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          name: Claude Desktop ${{ github.ref_name || github.event.inputs.tag }}
+          files: |
+            artifacts/**/*.rpm
+            artifacts/**/*.deb
+            artifacts/**/*.pkg.tar.*
+            artifacts/**/PKGBUILD
+          generate_release_notes: true
+          draft: false
+          prerelease: false

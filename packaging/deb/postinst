@@ -1,0 +1,31 @@
+#!/bin/bash
+set -e
+
+# Update icon caches
+gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+touch -h /usr/share/icons/hicolor 2>/dev/null || true
+update-desktop-database /usr/share/applications 2>/dev/null || true
+
+# Ensure Claude Code CLI wrapper is executable
+chmod +x /usr/bin/claude 2>/dev/null || true
+
+# Set correct permissions for chrome-sandbox
+SANDBOX_PATHS=(
+    "/usr/lib/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+)
+
+# Also check system electron
+if command -v electron >/dev/null 2>&1; then
+    ELECTRON_PATH=$(command -v electron)
+    POTENTIAL="$(dirname "$(dirname "$ELECTRON_PATH")")/lib/node_modules/electron/dist/chrome-sandbox"
+    SANDBOX_PATHS+=("$POTENTIAL")
+fi
+
+for SANDBOX_PATH in "${SANDBOX_PATHS[@]}"; do
+    if [ -f "$SANDBOX_PATH" ]; then
+        echo "Setting chrome-sandbox permissions: $SANDBOX_PATH"
+        chown root:root "$SANDBOX_PATH" 2>/dev/null || true
+        chmod 4755 "$SANDBOX_PATH" 2>/dev/null || true
+        break
+    fi
+done

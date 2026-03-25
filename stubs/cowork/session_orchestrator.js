@@ -65,24 +65,23 @@ class SessionOrchestrator {
       env.CLAUDE_CODE_OAUTH_TOKEN = options.oauthToken;
     }
 
-    // Spawn the Claude Code CLI process
-    const handle = this._swift.spawn(session.id, args, {
-      cwd: options.workDir || os.homedir(),
-      env,
-      onStdout: (data) => {
-        const safeData = redactForLogs(data);
-        this._onSessionOutput(session.id, 'stdout', safeData);
-      },
-      onStderr: (data) => {
-        const safeData = redactForLogs(data);
-        this._onSessionOutput(session.id, 'stderr', safeData);
-      },
-      onExit: (code, signal) => {
-        console.log(`[cowork-linux] Session ${session.id} exited: code=${code} signal=${signal}`);
-        this._activeHandles.delete(session.id);
-        this._store.update(session.id, { status: 'stopped', exitCode: code });
-      },
-    });
+    // Spawn the Claude Code CLI process.
+    // vm.spawn signature: (sessionId, processName, command, args, cwd, env,
+    //   additionalMounts, isResume, allowedDomains, sharedCwdPath, oneShot)
+    const workDir = options.workDir || os.homedir();
+    const handle = this._swift.spawn(
+      session.id,
+      session.name,        // processName
+      'claude',            // command (resolved by stub)
+      args,                // CLI arguments
+      workDir,             // cwd
+      env,                 // environment
+      options.mountPaths,  // additionalMounts
+      false,               // isResume
+      null,                // allowedDomains
+      null,                // sharedCwdPath
+      false                // oneShot
+    );
 
     this._activeHandles.set(session.id, handle);
     this._store.update(session.id, { status: 'running', pid: handle.pid });

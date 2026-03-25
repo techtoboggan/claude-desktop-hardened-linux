@@ -248,6 +248,84 @@ def patch_enterprise_config(content):
     return content
 
 
+def patch_claude_code_binary_manager(content):
+    """
+    Patch SCt.getHostPlatform() to support Linux.
+
+    The Claude Code binary manager (SCt class) has a getHostPlatform() method
+    that maps process.platform/arch to a platform string used for downloading
+    and locating the Claude Code CLI binary. It only handles "darwin" and "win32",
+    throwing "Unsupported platform: linux-x64" on Linux.
+
+    Without this patch, ClaudeCode_$_prepare, ClaudeCode_$_getStatus, and
+    LocalSessions_$_sendMessage all fail because they call getHostPlatform()
+    via getHostTarget() -> getBinaryPathIfReady().
+
+    We also patch getHostTarget() to use the correct binary name on Linux.
+    """
+    # Pattern: getHostPlatform(){const e=process.arch;if(process.platform==="darwin")return e==="arm64"?"darwin-arm64":"darwin-x64";if(process.platform==="win32")return e==="arm64"?"win32-arm64":"win32-x64";throw new Error(`Unsupported platform: ${process.platform}-${e}`)}
+    pattern = r'getHostPlatform\(\)\{const (\w)=process\.arch;if\(process\.platform==="darwin"\)return \1==="arm64"\?"darwin-arm64":"darwin-x64";if\(process\.platform==="win32"\)return \1==="arm64"\?"win32-arm64":"win32-x64";throw new Error\(`Unsupported platform: \$\{process\.platform\}-\$\{\1\}`\)\}'
+
+    match = re.search(pattern, content)
+    if match:
+        arch_var = match.group(1)
+        replacement = (
+            f'getHostPlatform(){{const {arch_var}=process.arch;'
+            f'if(process.platform==="darwin")return {arch_var}==="arm64"?"darwin-arm64":"darwin-x64";'
+            f'if(process.platform==="win32")return {arch_var}==="arm64"?"win32-arm64":"win32-x64";'
+            f'if(process.platform==="linux")return {arch_var}==="arm64"?"linux-arm64":"linux-x64";'
+            f'throw new Error(`Unsupported platform: ${{process.platform}}-${{{arch_var}}}`)}}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        print('  [ok] Patched getHostPlatform() to support Linux')
+        return content, True
+
+    # Fallback: look for just the throw
+    fallback = r'throw new Error\(`Unsupported platform: \$\{process\.platform\}-\$\{(\w)\}`\)\}'
+    match2 = re.search(fallback, content)
+    if match2:
+        arch_var = match2.group(1)
+        insert = f'if(process.platform==="linux")return {arch_var}==="arm64"?"linux-arm64":"linux-x64";'
+        content = content[:match2.start()] + insert + content[match2.start():]
+        print('  [ok] Patched getHostPlatform() with Linux fallback (inserted before throw)')
+        return content, True
+
+    print('  [FAIL] Could not find getHostPlatform() to patch')
+    return content, False
+
+
+def patch_claude_code_binary_resolution(content):
+    """
+    Patch the binary manager to find the system-installed Claude Code on Linux.
+
+    The binary manager tries to download Claude Code to its own managed directory.
+    On Linux, Claude Code is installed system-wide (e.g., /usr/bin/claude via npm).
+    We patch getLocalBinaryPath() to detect the system binary on Linux so it
+    skips the download flow entirely.
+    """
+    # Find: async getLocalBinaryPath(){return this.localBinaryInitPromise&&await this.localBinaryInitPromise,this.localBinaryPath}
+    pattern = r'async getLocalBinaryPath\(\)\{return this\.localBinaryInitPromise&&await this\.localBinaryInitPromise,this\.localBinaryPath\}'
+    match = re.search(pattern, content)
+    if match:
+        replacement = (
+            'async getLocalBinaryPath(){'
+            'if(process.platform==="linux"){'
+            'const fs=require("fs"),os=require("os"),'
+            'paths=["/usr/bin/claude","/usr/local/bin/claude",'
+            'os.homedir()+"/.local/bin/claude",'
+            'os.homedir()+"/.npm-global/bin/claude"];'
+            'for(const p of paths){try{await fs.promises.access(p);return p}catch{}}'
+            '}'
+            'return this.localBinaryInitPromise&&await this.localBinaryInitPromise,this.localBinaryPath}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        print('  [ok] Patched getLocalBinaryPath() to find system Claude on Linux')
+        return content, True
+
+    print('  [warn] Could not find getLocalBinaryPath() to patch')
+    return content, False
+
+
 def inject_cowork_init(content):
     """
     Inject Cowork initialization code into the main process entry.
@@ -327,7 +405,12 @@ def create_package_json_entry(asar_dir):
             pkg['dependencies'] = {}
 
         pkg['dependencies']['cowork'] = 'file:./node_modules/cowork'
-        pkg['dependencies']['claude-swift-stub'] = 'file:./node_modules/claude-swift-stub'
+        # Detect whether swift stub lives under @ant/ scope or at top level
+        swift_at_scope = os.path.isdir(os.path.join(asar_dir, 'node_modules', '@ant', 'claude-swift'))
+        if swift_at_scope:
+            pkg['dependencies']['@ant/claude-swift'] = 'file:./node_modules/@ant/claude-swift'
+        else:
+            pkg['dependencies']['claude-swift-stub'] = 'file:./node_modules/claude-swift-stub'
 
         with open(pkg_path, 'w') as f:
             json.dump(pkg, f, indent=2)
@@ -363,35 +446,47 @@ def main():
 
     original_size = len(content)
     success_count = 0
-    total_patches = 5
+    total_patches = 7
 
     # Patch 1: Replace uUt() platform gating function
-    print('  [patch 1/5] Platform gating function (uUt)...')
+    print('  [patch 1/7] Platform gating function (uUt)...')
     content, ok = patch_uUt_function(content)
     if ok:
         success_count += 1
 
     # Patch 2: Add Linux to VM image manifest
-    print('  [patch 2/5] VM image manifest (qn.files)...')
+    print('  [patch 2/7] VM image manifest (qn.files)...')
     content, ok = patch_vm_manifest(content)
     if ok:
         success_count += 1
 
     # Patch 3: Patch platform constants (Xze = isSupportedPlatform)
-    print('  [patch 3/5] Platform constants (Xze)...')
+    print('  [patch 3/7] Platform constants (Xze)...')
     content, ok = patch_platform_constants(content)
     if ok:
         success_count += 1
 
     # Patch 4: Enterprise config safety
-    print('  [patch 4/5] Enterprise config...')
+    print('  [patch 4/7] Enterprise config...')
     content = patch_enterprise_config(content)
     success_count += 1  # Always succeeds (may be no-op)
 
     # Patch 5: API header spoofing
-    print('  [patch 5/5] API headers...')
+    print('  [patch 5/7] API headers...')
     content = patch_api_headers(content)
     success_count += 1  # Always succeeds (may be no-op)
+
+    # Patch 6: Claude Code binary manager — getHostPlatform()
+    print('  [patch 6/7] Claude Code binary manager (getHostPlatform)...')
+    content, ok = patch_claude_code_binary_manager(content)
+    if ok:
+        success_count += 1
+
+    # Patch 7: Claude Code binary resolution — find system-installed binary on Linux
+    print('  [patch 7/7] Claude Code binary resolution (getLocalBinaryPath)...')
+    content, ok = patch_claude_code_binary_resolution(content)
+    if ok:
+        success_count += 1
 
     # Inject Cowork initialization
     print('  [inject] Cowork initialization...')

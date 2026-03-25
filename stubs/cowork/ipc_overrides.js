@@ -14,7 +14,12 @@
 
 const { ipcMain } = require('electron');
 const { SessionOrchestrator } = require('./session_orchestrator');
-const swiftStub = require('claude-swift-stub');
+let swiftStub;
+try {
+  swiftStub = require('@ant/claude-swift');
+} catch (_) {
+  swiftStub = require('claude-swift-stub');
+}
 
 let orchestrator = null;
 
@@ -23,7 +28,9 @@ let orchestrator = null;
  */
 function getOrchestrator() {
   if (!orchestrator) {
-    orchestrator = new SessionOrchestrator(swiftStub.default);
+    // swiftStub is module.exports which has .vm; pass the vm object to orchestrator
+    const vm = swiftStub.vm || (swiftStub.default && swiftStub.default.vm) || swiftStub;
+    orchestrator = new SessionOrchestrator(vm);
   }
   return orchestrator;
 }
@@ -101,37 +108,39 @@ function registerCoworkHandlers() {
   });
 
   // --- ClaudeVM ---
+  // Access methods via .vm (the module export shape changed to { vm: {...}, desktop: {...} })
+  const vm = swiftStub.vm || swiftStub;
 
   safeHandle('claudeVM:download', async () => {
-    return swiftStub.download();
+    return vm.download();
   });
 
   safeHandle('claudeVM:getDownloadStatus', async () => {
-    return swiftStub.getDownloadStatus();
+    return vm.getDownloadStatus();
   });
 
   safeHandle('claudeVM:startVM', async () => {
-    return swiftStub.startVM();
+    return vm.startVM();
   });
 
   safeHandle('claudeVM:stopVM', async () => {
-    return swiftStub.stopVM();
+    return vm.stopVM();
   });
 
   safeHandle('claudeVM:setYukonSilverConfig', async (_event, config) => {
-    return swiftStub.setYukonSilverConfig(config);
+    return vm.setYukonSilverConfig(config);
   });
 
   safeHandle('claudeVM:deleteAndReinstall', async () => {
-    return swiftStub.deleteAndReinstall();
+    return vm.deleteAndReinstall();
   });
 
   safeHandle('claudeVM:checkVirtualMachinePlatform', async () => {
-    return swiftStub.checkVirtualMachinePlatform();
+    return vm.checkVirtualMachinePlatform();
   });
 
   safeHandle('claudeVM:enableVirtualMachinePlatform', async () => {
-    return swiftStub.enableVirtualMachinePlatform();
+    return vm.enableVirtualMachinePlatform();
   });
 
   // --- AppFeatures ---
