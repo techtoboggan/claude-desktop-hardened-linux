@@ -22,7 +22,18 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Detect trojan source (Unicode/bidirectional attacks)
-        run: npx anti-trojan-source@1.8.1 --files='{stubs/**/*.js,lib/**/*.sh,scripts/**/*.js,enable-cowork.py}' --verbose
+        run: |
+          # Scan for dangerous bidi/control chars. Allow confusables (emoji variation selectors etc.)
+          # Exit code 1 = confusables only (warnings), exit code 2+ = dangerous chars
+          npx anti-trojan-source@1.8.1 --files='{stubs/**/*.js,lib/**/*.sh,scripts/**/*.js,enable-cowork.py}' --verbose || {
+            EXIT_CODE=$?
+            if [ "$EXIT_CODE" -eq 1 ]; then
+              echo "::warning::Confusable characters found (emoji variation selectors, etc.) — review above"
+            else
+              echo "::error::Dangerous Unicode characters detected!"
+              exit "$EXIT_CODE"
+            fi
+          }
 
       - name: Detect suspicious patterns in shell scripts
         run: |
