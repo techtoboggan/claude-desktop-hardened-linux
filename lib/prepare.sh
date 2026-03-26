@@ -282,15 +282,11 @@ Terminal=false
 Categories=Office;Utility;
 MimeType=x-scheme-handler/claude;
 StartupWMClass=Claude
-Actions=quit;new-window;
+Actions=quit;
 
 [Desktop Action quit]
-Name=Quit
-Exec=sh -c 'pkill -f claude-desktop'
-
-[Desktop Action new-window]
-Name=New Window
-Exec=claude-desktop
+Name=Quit Claude
+Exec=sh -c 'pkill -f "electron.*claude-desktop/app.asar" || pkill -f claude-desktop'
 EOF
 
     # Launcher script with Wayland detection, keyring support, logging
