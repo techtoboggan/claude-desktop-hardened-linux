@@ -24,10 +24,11 @@ build_package() {
     mkdir -p "${WORK_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
     cd "$WORK_DIR/electron-app"
-    RPM_FILE="$(pwd)/${ARCHITECTURE}/claude-desktop-${VERSION}-1.$(uname -m).rpm"
+    RPM_FILE="$(pwd)/${ARCHITECTURE}/claude-desktop-${VERSION}-1.${ARCHITECTURE}.rpm"
     if rpmbuild -bb \
         --define "_topdir ${WORK_DIR}" \
         --define "_rpmdir $(pwd)" \
+        --define "dist %{nil}" \
         "${SPEC_OUT}"; then
         log_ok "RPM package built successfully at: $RPM_FILE"
         echo "🎉 Done! Install with: dnf install $RPM_FILE"
