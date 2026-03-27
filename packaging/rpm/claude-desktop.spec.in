@@ -7,7 +7,7 @@ AutoReqProv:    no
 URL:            https://www.anthropic.com
 BuildArch:      @@ARCHITECTURE@@
 Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils
-Recommends:     qemu-kvm, bubblewrap, socat, gnome-keyring
+Recommends:     bubblewrap, gnome-keyring
 
 %description
 Claude is an AI assistant from Anthropic.

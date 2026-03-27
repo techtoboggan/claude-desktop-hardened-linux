@@ -4,7 +4,7 @@
  * On macOS, this is a native Swift addon managing Apple's Virtualization Framework.
  * On Windows, this role is played by cowork-svc.exe over named pipes.
  * On Linux, we spawn Claude Code CLI directly with optional sandboxing
- * via bubblewrap or KVM/QEMU.
+ * via bubblewrap when available, or directly on the host.
  *
  * This stub implements the same interface so the Electron app's IPC handlers
  * work without modification.
@@ -180,7 +180,7 @@ function isPathSafe(p) {
 
 /**
  * Detect best available sandbox backend.
- * Priority: bubblewrap > host (KVM support can be added later)
+ * Priority: bubblewrap > host
  */
 function detectBackend() {
   // Check for bubblewrap at known paths (don't rely on PATH in Electron)
