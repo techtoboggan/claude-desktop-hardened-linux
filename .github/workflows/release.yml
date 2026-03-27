@@ -255,6 +255,13 @@ jobs:
 
           # Create a repackaging spec
           cat > claude-desktop.spec <<SPEC
+          # Disable build-id checks and stripping — this is a binary repackage
+          %global _missing_build_ids_terminate_build 0
+          %global _enable_debug_packages 0
+          %global debug_package %{nil}
+          %global __os_install_post %{nil}
+          %global __strip /bin/true
+
           Name:           claude-desktop
           Version:        ${VERSION}
           Release:        1%{?dist}
