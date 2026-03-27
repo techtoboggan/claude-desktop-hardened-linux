@@ -38,7 +38,15 @@ Pre-built packages are available on the [Releases](https://github.com/techtobogg
 
 ## Installation
 
-### From GitHub Releases (recommended)
+### Quick install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-linux/main/install.sh | bash
+```
+
+Detects your distro, downloads the latest release, and installs it.
+
+### Manual install
 
 Download the latest package for your distro from [Releases](https://github.com/techtoboggan/claude-desktop-linux/releases), then:
 
