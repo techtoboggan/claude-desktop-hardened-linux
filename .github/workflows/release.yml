@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   check-version:
@@ -167,21 +169,39 @@ jobs:
           body: |
             ## Claude Desktop v${{ needs.check-version.outputs.version }} for Linux
 
-            ### Install
-
-            **Fedora / RHEL / Rocky:**
+            ### Quick install
             ```bash
-            sudo dnf install claude-desktop-*.rpm
+            curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-linux/main/install.sh | bash
             ```
 
-            **Debian / Ubuntu:**
+            ### Package repositories
+
+            **Fedora (COPR):**
             ```bash
-            sudo dpkg -i claude-desktop_*.deb && sudo apt-get install -f
+            sudo dnf copr enable techtoboggan/claude-desktop
+            sudo dnf install claude-desktop
             ```
 
-            **Arch Linux:**
+            **Debian / Ubuntu (APT):**
             ```bash
-            sudo pacman -U claude-desktop-*.pkg.tar.zst
+            curl -fsSL https://techtoboggan.github.io/claude-desktop-linux/claude-desktop.gpg.key \
+              | sudo gpg --dearmor -o /etc/apt/keyrings/claude-desktop.gpg
+            echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/claude-desktop.gpg] https://techtoboggan.github.io/claude-desktop-linux stable main" \
+              | sudo tee /etc/apt/sources.list.d/claude-desktop.list
+            sudo apt update && sudo apt install claude-desktop
+            ```
+
+            **Arch Linux (AUR):**
+            ```bash
+            yay -S claude-desktop-bin
+            ```
+
+            ### Manual install
+            Download packages from this release:
+            ```bash
+            sudo dnf install claude-desktop-*.rpm        # Fedora/RHEL
+            sudo dpkg -i claude-desktop_*.deb            # Debian/Ubuntu
+            sudo pacman -U claude-desktop-*.pkg.tar.zst  # Arch
             ```
 
             ### What's included
@@ -204,3 +224,56 @@ jobs:
             artifacts/sbom/sbom.json
           draft: false
           prerelease: false
+
+  # ---------------------------------------------------------------------------
+  # Publish to Fedora COPR
+  # ---------------------------------------------------------------------------
+  publish-copr:
+    needs: [check-version, release]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - name: Install copr-cli
+        run: pip install copr-cli
+
+      - name: Configure COPR
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+        run: |
+          mkdir -p ~/.config
+          printf '[copr-cli]\nlogin = %s\nusername = %s\ntoken = %s\ncopr_url = https://copr.fedoraproject.org\n' \
+            "$COPR_LOGIN" "$COPR_USERNAME" "$COPR_TOKEN" > ~/.config/copr
+
+      - name: Download RPM from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ needs.check-version.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.rpm" \
+            --dir ./rpms
+
+      - name: Upload to COPR
+        run: |
+          RPM_FILE=$(ls ./rpms/*.rpm | head -1)
+          copr-cli build claude-desktop "$RPM_FILE" --nowait
+
+  # ---------------------------------------------------------------------------
+  # TODO: Publish APT repository to GitHub Pages (enable when GPG key is set up)
+  # ---------------------------------------------------------------------------
+  # publish-apt:
+  #   needs: [check-version, release]
+  #   ...
+
+  # ---------------------------------------------------------------------------
+  # TODO: Publish to AUR (enable when AUR SSH key is set up)
+  # ---------------------------------------------------------------------------
+  # publish-aur:
+  #   needs: [check-version, release]
+  #   ...

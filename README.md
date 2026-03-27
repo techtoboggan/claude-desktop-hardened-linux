@@ -38,7 +38,37 @@ Pre-built packages are available on the [Releases](https://github.com/techtobogg
 
 ## Installation
 
-### From GitHub Releases (recommended)
+### Quick install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-linux/main/install.sh | bash
+```
+
+Detects your distro, downloads the latest release, and installs it.
+
+### Package repositories
+
+**Fedora / RHEL (COPR):**
+```bash
+sudo dnf copr enable techtoboggan/claude-desktop
+sudo dnf install claude-desktop
+```
+
+**Debian / Ubuntu (APT):**
+```bash
+curl -fsSL https://techtoboggan.github.io/claude-desktop-linux/claude-desktop.gpg.key \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/claude-desktop.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/claude-desktop.gpg] https://techtoboggan.github.io/claude-desktop-linux stable main" \
+  | sudo tee /etc/apt/sources.list.d/claude-desktop.list
+sudo apt update && sudo apt install claude-desktop
+```
+
+**Arch Linux (AUR):**
+```bash
+yay -S claude-desktop-bin
+```
+
+### Manual install
 
 Download the latest package for your distro from [Releases](https://github.com/techtoboggan/claude-desktop-linux/releases), then:
 
