@@ -122,16 +122,34 @@ const _iconFull=_cNI.createFromPath(_iconPath);
 const _iconSmall=_iconFull.isEmpty()?_iconFull:_iconFull.resize({width:48,height:48});
 const _iconDataUrl=_iconSmall.isEmpty()?null:_iconSmall.toDataURL();
 
-// On Linux: don't nuke the application menu — KDE's system tray "Quit" and
-// "Show App" actions need it. Instead, hide the menu bar per-window and let
-// Electron's tray/quit handlers work normally.
+if(process.platform==="linux"){
+  // Intercept setApplicationMenu: let the app set whatever menu it wants,
+  // but ensure there's always a working Quit item for the tray, and hide
+  // the visual menu bar on each window.
+  const _origSetMenu=_cMenu.setApplicationMenu.bind(_cMenu);
+  _cMenu.setApplicationMenu=(m)=>{
+    // If the app is setting null or a menu without quit, build a proper one
+    if(!m){
+      m=_cMenu.buildFromTemplate([{role:"appMenu"},{role:"editMenu"},{role:"windowMenu"}]);
+    }
+    _origSetMenu(m);
+    // Hide menu bar on all existing windows
+    const{BrowserWindow:_BW}=require("electron");
+    for(const win of _BW.getAllWindows()){
+      win.setMenuBarVisibility(false);
+      win.setAutoHideMenuBar(true);
+    }
+  };
+
+  // Ensure closing all windows actually quits the app (Linux has no dock to reopen from)
+  _capp.on("window-all-closed",()=>{_capp.quit();});
+}
 
 _capp.on("ready",()=>{
   try{if(!_iconFull.isEmpty()&&_capp.setIcon)_capp.setIcon(_iconFull);}catch(ex){}
 });
 
 _capp.on("browser-window-created",(e,w)=>{
-  // Hide the menu bar visually but keep the menu functional for tray actions
   if(process.platform==="linux"){
     w.setMenuBarVisibility(false);
     w.setAutoHideMenuBar(true);
