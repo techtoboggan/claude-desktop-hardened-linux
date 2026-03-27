@@ -50,77 +50,70 @@ def find_main_entry(asar_dir):
     return None
 
 
-def patch_uUt_function(content):
+def patch_platform_gating_functions(content):
     """
-    Patch the uUt() platform gating function to accept Linux.
+    Patch ALL platform gating functions to accept Linux.
 
-    Original function checks process.platform against "darwin"/"win32"
-    and returns unsupported for anything else. We replace the entire
-    function body to return "supported" when running on Linux.
+    Multiple functions check process.platform against "darwin"/"win32"
+    and return unsupported for anything else. In newer versions (1.1.9134+),
+    there are separate gating functions for different feature areas (e.g.,
+    uUt for VM support, jtn for yukonSilver/cowork). We must patch all of them.
     """
-    # Find the function: function uUt(){const t=process.platform;if(t!=="darwin"&&t!=="win32")return{...
-    # We need to find it by its unique signature
-    pattern = r'function\s+uUt\s*\(\)\s*\{'
+    # Match any function that gates on darwin/win32 and returns unsupported
+    pattern = r'function\s+(\w+)\s*\(\)\s*\{const\s+\w=process\.platform;if\(\w!=="darwin"&&\w!=="win32"\)return\{status:"unsupported"'
 
-    match = re.search(pattern, content)
-    if not match:
-        print('  [warn] Could not find uUt() function — trying fallback pattern')
-        # Fallback: look for the function by its body content
-        pattern = r'function\s+(\w+)\s*\(\)\s*\{const\s+t=process\.platform;if\(t!=="darwin"&&t!=="win32"\)return\{status:"unsupported"'
-        match = re.search(pattern, content)
-        if not match:
-            print('  [FAIL] Could not find platform gating function')
-            return content, False
+    matches = list(re.finditer(pattern, content))
 
-    func_name = 'uUt'
-    if match.lastindex and match.lastindex >= 1:
-        func_name = match.group(1)
-
-    # Find the full function by counting braces
-    func_start = match.start()
-    brace_start = content.index('{', match.start())
-    brace_count = 0
-    func_end = None
-
-    for i in range(brace_start, min(brace_start + 5000, len(content))):
-        if content[i] == '{':
-            brace_count += 1
-        elif content[i] == '}':
-            brace_count -= 1
-            if brace_count == 0:
-                func_end = i + 1
-                break
-
-    if func_end is None:
-        print('  [FAIL] Could not find end of platform gating function')
+    if not matches:
+        print('  [FAIL] Could not find any platform gating functions')
         return content, False
 
-    original_func = content[func_start:func_end]
-    print(f'  [found] Platform gating function: {func_name}() ({len(original_func)} bytes)')
+    print(f'  [found] {len(matches)} platform gating function(s)')
 
-    # Replace with a version that accepts Linux
-    # We keep the original for darwin/win32 but add linux as a pass-through
-    replacement = (
-        f'function {func_name}()'
-        '{const t=process.platform;'
-        # Linux: skip all platform-specific checks, return supported directly
-        'if(t==="linux")return{status:"supported"};'
-        # For darwin/win32: keep original logic
-        'if(t!=="darwin"&&t!=="win32")return{status:"unsupported",'
-        'reason:"Cowork is not supported on this platform",'
-        'unsupportedCode:"unsupported_platform"};'
-        # Architecture check
-        'const e=process.arch;'
-        'if(e!=="x64"&&e!=="arm64")return{status:"unsupported",'
-        'reason:"Unsupported architecture",'
-        'unsupportedCode:"unsupported_architecture"};'
-        # Skip all other checks (Windows build, HCS, macOS version, virtualization)
-        # These don't apply to Linux
-        'return{status:"supported"}}'
-    )
+    # Patch in reverse order so offsets remain valid
+    for match in reversed(matches):
+        func_name = match.group(1)
 
-    content = content[:func_start] + replacement + content[func_end:]
-    print(f'  [ok] Replaced {func_name}() with Linux-aware version')
+        # Find the full function by counting braces
+        func_start = match.start()
+        brace_start = content.index('{', match.start())
+        brace_count = 0
+        func_end = None
+
+        for i in range(brace_start, min(brace_start + 5000, len(content))):
+            if content[i] == '{':
+                brace_count += 1
+            elif content[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    func_end = i + 1
+                    break
+
+        if func_end is None:
+            print(f'  [warn] Could not find end of {func_name}(), skipping')
+            continue
+
+        original_func = content[func_start:func_end]
+        print(f'  [found] Platform gating function: {func_name}() ({len(original_func)} bytes)')
+
+        # Replace with a version that accepts Linux
+        replacement = (
+            f'function {func_name}()'
+            '{const t=process.platform;'
+            'if(t==="linux")return{status:"supported"};'
+            'if(t!=="darwin"&&t!=="win32")return{status:"unsupported",'
+            'reason:"Cowork is not supported on this platform",'
+            'unsupportedCode:"unsupported_platform"};'
+            'const e=process.arch;'
+            'if(e!=="x64"&&e!=="arm64")return{status:"unsupported",'
+            'reason:"Unsupported architecture",'
+            'unsupportedCode:"unsupported_architecture"};'
+            'return{status:"supported"}}'
+        )
+
+        content = content[:func_start] + replacement + content[func_end:]
+        print(f'  [ok] Replaced {func_name}() with Linux-aware version')
+
     return content, True
 
 
@@ -448,9 +441,9 @@ def main():
     success_count = 0
     total_patches = 7
 
-    # Patch 1: Replace uUt() platform gating function
-    print('  [patch 1/7] Platform gating function (uUt)...')
-    content, ok = patch_uUt_function(content)
+    # Patch 1: Replace ALL platform gating functions (uUt, jtn, etc.)
+    print('  [patch 1/7] Platform gating functions...')
+    content, ok = patch_platform_gating_functions(content)
     if ok:
         success_count += 1
 
