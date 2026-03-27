@@ -116,24 +116,86 @@ SWIFTPKG
 const{app:_capp,Menu:_cMenu,nativeImage:_cNI}=require("electron");
 const _cPath=require("path");
 
+// Set desktop filename so Wayland compositors can match the window to the
+// .desktop entry (correct icon, pinning, window grouping).
+_capp.setDesktopName("claude-desktop.desktop");
+
 // Load icon once; resize to 48px for in-app title bar injection.
 const _iconPath=_cPath.join(__dirname,"..","..","resources","icon.png");
 const _iconFull=_cNI.createFromPath(_iconPath);
 const _iconSmall=_iconFull.isEmpty()?_iconFull:_iconFull.resize({width:48,height:48});
 const _iconDataUrl=_iconSmall.isEmpty()?null:_iconSmall.toDataURL();
 
+// TRAY FIX: Electron on Linux has a bug where Tray.destroy() doesn't properly
+// clean up D-Bus exported methods (StatusNotifierItem). When the app recreates
+// the tray (e.g. on theme change via nativeTheme "updated" event), the new tray
+// fails to re-export its D-Bus interface, resulting in an unresponsive
+// StatusNotifierItem (Show App / Quit do nothing on KDE Wayland).
+// Fix: intercept require('electron') via Module._load to return a Proxy that
+// makes Tray a singleton — destroy() becomes a no-op, new Tray() returns the
+// existing instance with updated icon. Context menu / event handlers are
+// re-attached by the app's own code after construction.
 if(process.platform==="linux"){
-  // Block all menu-bar creation before any app code runs.
-  const _origSetMenu=_cMenu.setApplicationMenu.bind(_cMenu);
-  _cMenu.setApplicationMenu=()=>_origSetMenu(null);
+  const _Module=require("module");
+  const _origLoad=_Module._load;
+  let _singletonTray=null;
+  _Module._load=function(request,parent,isMain){
+    const result=_origLoad.call(this,request,parent,isMain);
+    if(request==="electron"&&result&&typeof result==="object"){
+      return new Proxy(result,{get(target,prop){
+        if(prop==="Tray"){
+          const OrigTray=target.Tray;
+          return function TrayProxy(icon){
+            if(_singletonTray&&!_singletonTray.isDestroyed()){
+              try{_singletonTray.setImage(icon);}catch(_){}
+              return _singletonTray;
+            }
+            _singletonTray=new OrigTray(icon);
+            _singletonTray.destroy=()=>{};
+            return _singletonTray;
+          };
+        }
+        return target[prop];
+      }});
+    }
+    return result;
+  };
 }
 
+// Minimal Linux integration: hide menu bar, set icon, register missing eipc stubs.
+
 _capp.on("ready",()=>{
-  _cMenu.setApplicationMenu(null);
   try{if(!_iconFull.isEmpty()&&_capp.setIcon)_capp.setIcon(_iconFull);}catch(ex){}
+
+  // Register stub handlers for eipc interfaces that have no implementation on Linux.
+  // The eipc framework's catch-all may register first, so we delay and replace.
+  setTimeout(()=>{
+    const{ipcMain:_ipc}=require("electron");
+    const _eipcPrefix="$eipc_message$_742e51f2-18f9-4a58-bbe9-e8a5cc4381ee_$_";
+    const _stubs={
+      "claude.web_$_ComputerUseTcc_$_getState":       ()=>({screenRecording:true,accessibility:true}),
+      "claude.web_$_ComputerUseTcc_$_requestAccessibility":()=>({granted:true}),
+      "claude.web_$_ComputerUseTcc_$_requestScreenRecording":()=>({granted:true}),
+      "claude.web_$_ComputerUseTcc_$_openSystemSettings":()=>{},
+      "claude.web_$_ComputerUseTcc_$_getCurrentSessionGrants":()=>[],
+      "claude.web_$_ComputerUseTcc_$_revokeGrant":    ()=>{},
+      "claude.web_$_ComputerUseTcc_$_listInstalledApps":()=>[],
+    };
+    for(const[suffix,handler] of Object.entries(_stubs)){
+      const ch=_eipcPrefix+suffix;
+      try{_ipc.removeHandler(ch);}catch(_){}
+      try{_ipc.handle(ch,handler);}catch(_){}
+    }
+    console.log("[cowork-linux] Registered ComputerUseTcc stubs");
+  },2000);
 });
 
 _capp.on("browser-window-created",(e,w)=>{
+  if(process.platform==="linux"){
+    // Hide the visual menu bar but don't touch the Menu object
+    w.setAutoHideMenuBar(true);
+    w.setMenuBarVisibility(false);
+  }
   try{if(!_iconFull.isEmpty())w.setIcon(_iconFull);}catch(ex){}
 
   if(process.platform!=="linux"||!_iconDataUrl)return;
@@ -280,12 +342,22 @@ Type=Application
 Terminal=false
 Categories=Office;Utility;
 MimeType=x-scheme-handler/claude;
-StartupWMClass=Claude
+StartupWMClass=claude-desktop
+Actions=quit;
+
+[Desktop Action quit]
+Name=Quit Claude
+Exec=sh -c 'pkill -f "electron.*claude-desktop/app.asar" || pkill -f claude-desktop'
 EOF
 
     # Launcher script with Wayland detection, keyring support, logging
     cat > "$INSTALL_DIR/bin/claude-desktop" << LAUNCHEREOF
 #!/bin/bash
+
+# Tell Chromium/Electron which .desktop file we belong to.
+# This sets the Wayland app_id so the compositor can match windows to the
+# desktop entry (icon, pinning, etc.).
+export CHROME_DESKTOP="claude-desktop.desktop"
 
 # Detect Wayland
 if [ -n "\$WAYLAND_DISPLAY" ] || [ "\$XDG_SESSION_TYPE" = "wayland" ]; then
@@ -307,6 +379,8 @@ fi
 LOG_FILE="\$HOME/claude-desktop-launcher.log"
 
 exec electron ${INSTALL_LIB_DIR}/app.asar \\
+    --class=claude-desktop \\
+    --name=claude-desktop \\
     --ozone-platform-hint=auto \\
     --enable-logging=file \\
     --log-file="\$LOG_FILE" \\
