@@ -123,17 +123,17 @@ const _iconSmall=_iconFull.isEmpty()?_iconFull:_iconFull.resize({width:48,height
 const _iconDataUrl=_iconSmall.isEmpty()?null:_iconSmall.toDataURL();
 
 if(process.platform==="linux"){
+  let _forceQuit=false;
+
   // Intercept setApplicationMenu: let the app set whatever menu it wants,
   // but ensure there's always a working Quit item for the tray, and hide
   // the visual menu bar on each window.
   const _origSetMenu=_cMenu.setApplicationMenu.bind(_cMenu);
   _cMenu.setApplicationMenu=(m)=>{
-    // If the app is setting null or a menu without quit, build a proper one
     if(!m){
       m=_cMenu.buildFromTemplate([{role:"appMenu"},{role:"editMenu"},{role:"windowMenu"}]);
     }
     _origSetMenu(m);
-    // Hide menu bar on all existing windows
     const{BrowserWindow:_BW}=require("electron");
     for(const win of _BW.getAllWindows()){
       win.setMenuBarVisibility(false);
@@ -141,8 +141,38 @@ if(process.platform==="linux"){
     }
   };
 
-  // Ensure closing all windows actually quits the app (Linux has no dock to reopen from)
+  // Ensure closing all windows actually quits the app
   _capp.on("window-all-closed",()=>{_capp.quit();});
+
+  // KDE tray "Quit" calls app.quit() but the app's before-quit handler may
+  // block it (to stay in tray). Override: once quit is requested, force it.
+  _capp.on("before-quit",(e)=>{_forceQuit=true;});
+
+  // KDE tray "Show App" sends Activate via D-Bus. Electron emits this as
+  // a click on the Tray. We also handle it by watching for the activate event
+  // on the app and showing/focusing the main window.
+  _capp.on("activate",()=>{
+    const{BrowserWindow:_BW}=require("electron");
+    const wins=_BW.getAllWindows();
+    if(wins.length>0){
+      const w=wins[0];
+      if(w.isMinimized())w.restore();
+      w.show();
+      w.focus();
+    }
+  });
+
+  // Also handle second-instance (which Electron fires on Activate for single-instance apps)
+  _capp.on("second-instance",()=>{
+    const{BrowserWindow:_BW}=require("electron");
+    const wins=_BW.getAllWindows();
+    if(wins.length>0){
+      const w=wins[0];
+      if(w.isMinimized())w.restore();
+      w.show();
+      w.focus();
+    }
+  });
 }
 
 _capp.on("ready",()=>{
