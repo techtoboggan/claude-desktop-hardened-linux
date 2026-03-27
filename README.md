@@ -25,14 +25,16 @@ curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-linux/m
 
 Detects your distro, downloads the latest release, and installs it.
 
-### Fedora (COPR)
+### Fedora Workstation (recommended)
+
+Available from [Fedora COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop/) for Fedora 43 and 44:
 
 ```bash
 sudo dnf copr enable techtoboggan/claude-desktop
 sudo dnf install claude-desktop
 ```
 
-Updates automatically with `sudo dnf upgrade`.
+Updates automatically with `sudo dnf upgrade`. This is the easiest way to stay current.
 
 ### Manual install
 
@@ -70,12 +72,13 @@ Requires Node.js >= 18, npm, and root/sudo access. Build dependencies are instal
 
 ## Supported distros
 
-| Family | Distros | Package |
-|--------|---------|---------|
-| RPM | Fedora, RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` |
-| DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` |
-| Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` |
-| NixOS | [k3d3/claude-desktop-linux-flake](https://github.com/k3d3/claude-desktop-linux-flake) | Nix flake |
+| Family | Distros | Package | Repo |
+|--------|---------|---------|------|
+| RPM | Fedora 43/44 | `.rpm` | [COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop/) |
+| RPM | RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` | — |
+| DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | — |
+| Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` | — |
+| NixOS | [k3d3/claude-desktop-linux-flake](https://github.com/k3d3/claude-desktop-linux-flake) | Nix flake | — |
 
 x86_64 only.
 
