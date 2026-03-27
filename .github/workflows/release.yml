@@ -241,15 +241,14 @@ jobs:
         run: pip install copr-cli
 
       - name: Configure COPR
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
         run: |
           mkdir -p ~/.config
-          cat > ~/.config/copr <<'EOF'
-          [copr-cli]
-          login = ${{ secrets.COPR_LOGIN }}
-          username = ${{ secrets.COPR_USERNAME }}
-          token = ${{ secrets.COPR_TOKEN }}
-          copr_url = https://copr.fedoraproject.org
-          EOF
+          printf '[copr-cli]\nlogin = %s\nusername = %s\ntoken = %s\ncopr_url = https://copr.fedoraproject.org\n' \
+            "$COPR_LOGIN" "$COPR_USERNAME" "$COPR_TOKEN" > ~/.config/copr
 
       - name: Download RPM from release
         env:
@@ -266,172 +265,15 @@ jobs:
           copr-cli build claude-desktop "$RPM_FILE" --nowait
 
   # ---------------------------------------------------------------------------
-  # Publish APT repository to GitHub Pages
+  # TODO: Publish APT repository to GitHub Pages (enable when GPG key is set up)
   # ---------------------------------------------------------------------------
-  publish-apt:
-    needs: [check-version, release]
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
-        with:
-          egress-policy: audit
-
-      - name: Checkout gh-pages branch
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: gh-pages
-          path: repo-site
-          fetch-depth: 1
-        continue-on-error: true
-
-      - name: Initialize gh-pages if needed
-        run: |
-          if [ ! -d repo-site/.git ]; then
-            mkdir -p repo-site
-            cd repo-site
-            git init
-            git checkout -b gh-pages
-          fi
-          mkdir -p repo-site/pool/main
-          mkdir -p repo-site/dists/stable/main/binary-amd64
-
-      - name: Download DEB from release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download "${{ needs.check-version.outputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "*.deb" \
-            --dir ./repo-site/pool/main
-
-      - name: Import GPG key
-        run: echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
-
-      - name: Generate APT repository metadata
-        run: |
-          cd repo-site
-
-          # Export public key for users to download
-          GPG_EMAIL=$(gpg --list-keys --keyid-format long 2>/dev/null | grep uid | head -1 | sed 's/.*<\(.*\)>.*/\1/')
-          gpg --armor --export "$GPG_EMAIL" > claude-desktop.gpg.key
-
-          # Generate Packages file
-          dpkg-scanpackages --multiversion pool/ > dists/stable/main/binary-amd64/Packages
-          gzip -k -f dists/stable/main/binary-amd64/Packages
-
-          # Generate Release file
-          cd dists/stable
-          cat > Release <<REOF
-          Origin: claude-desktop-linux
-          Label: Claude Desktop for Linux
-          Suite: stable
-          Codename: stable
-          Architectures: amd64
-          Components: main
-          Description: Claude Desktop for Linux APT Repository
-          Date: $(date -Ru)
-          REOF
-          apt-ftparchive release . >> Release
-
-          # Sign
-          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
-          gpg --batch --yes --clearsign -o InRelease Release
-
-      - name: Commit and push to gh-pages
-        run: |
-          cd repo-site
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          REMOTE_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git remote set-url origin "$REMOTE_URL" 2>/dev/null || git remote add origin "$REMOTE_URL"
-          git add -A
-          git diff --cached --quiet && echo "No changes" && exit 0
-          git commit -m "Update APT repo for ${{ needs.check-version.outputs.tag }}"
-          git push origin gh-pages || git push --set-upstream origin gh-pages
+  # publish-apt:
+  #   needs: [check-version, release]
+  #   ...
 
   # ---------------------------------------------------------------------------
-  # Publish to AUR
+  # TODO: Publish to AUR (enable when AUR SSH key is set up)
   # ---------------------------------------------------------------------------
-  publish-aur:
-    needs: [check-version, release]
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    steps:
-      - name: Install dependencies
-        run: pacman -Sy --noconfirm git openssh base-devel
-
-      - name: Configure SSH for AUR
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          cat > ~/.ssh/config <<'EOF'
-          Host aur.archlinux.org
-            IdentityFile ~/.ssh/aur
-            User aur
-            StrictHostKeyChecking accept-new
-          EOF
-
-      - name: Clone AUR repo
-        run: |
-          git clone ssh://aur@aur.archlinux.org/claude-desktop-bin.git aur-repo || {
-            mkdir aur-repo && cd aur-repo && git init && git remote add origin ssh://aur@aur.archlinux.org/claude-desktop-bin.git
-          }
-          cd aur-repo
-          git config user.name "Claude Desktop Bot"
-          git config user.email "claude-desktop@techtoboggan.github.io"
-
-      - name: Generate PKGBUILD
-        env:
-          VERSION: ${{ needs.check-version.outputs.version }}
-          TAG: ${{ needs.check-version.outputs.tag }}
-        run: |
-          # Download the DEB to compute checksum (more reliable than .pkg.tar.zst across arch versions)
-          curl -sL "https://github.com/${{ github.repository }}/releases/download/${TAG}/claude-desktop_${VERSION}_amd64.deb" \
-            -o /tmp/claude-desktop.deb
-          SHA256=$(sha256sum /tmp/claude-desktop.deb | cut -d' ' -f1)
-
-          cat > aur-repo/PKGBUILD <<PKGEOF
-          # Maintainer: TechToboggan <techtoboggan@users.noreply.github.com>
-          pkgname=claude-desktop-bin
-          pkgver=${VERSION}
-          pkgrel=1
-          pkgdesc="Claude Desktop for Linux with Cowork, MCP, and bundled Claude Code CLI"
-          arch=('x86_64')
-          url="https://github.com/techtoboggan/claude-desktop-linux"
-          license=('custom:proprietary')
-          depends=('electron' 'nodejs')
-          optdepends=('libsecret: credential storage via gnome-keyring'
-                      'xdg-utils: URL handler registration')
-          provides=('claude-desktop')
-          conflicts=('claude-desktop')
-          source=("claude-desktop-\${pkgver}.deb::https://github.com/techtoboggan/claude-desktop-linux/releases/download/${TAG}/claude-desktop_\${pkgver}_amd64.deb")
-          sha256sums=('${SHA256}')
-          noextract=("claude-desktop-\${pkgver}.deb")
-
-          package() {
-            cd "\${srcdir}"
-            bsdtar -xf "claude-desktop-\${pkgver}.deb"
-            bsdtar -xf data.tar.* -C "\${pkgdir}/"
-          }
-          PKGEOF
-
-          # Strip leading whitespace from heredoc
-          sed -i 's/^          //' aur-repo/PKGBUILD
-
-      - name: Generate .SRCINFO
-        run: |
-          cd aur-repo
-          useradd -m _build 2>/dev/null || true
-          chown -R _build:_build .
-          su _build -c "makepkg --printsrcinfo" > .SRCINFO
-
-      - name: Push to AUR
-        run: |
-          cd aur-repo
-          git add PKGBUILD .SRCINFO
-          git diff --cached --quiet && echo "No changes to push" && exit 0
-          git commit -m "Update to ${{ needs.check-version.outputs.version }}"
-          git push origin master
+  # publish-aur:
+  #   needs: [check-version, release]
+  #   ...
