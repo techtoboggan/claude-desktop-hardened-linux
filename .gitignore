@@ -5,9 +5,6 @@ build-*/
 *.deb
 *.pkg.tar.*
 
-# Reference implementation
-reference/
-
 # Node modules
 node_modules/
 
@@ -18,9 +15,6 @@ __pycache__/
 # Claude Code workspace
 .claude/
 
-# Tauri build artifacts
-src-tauri/
-
-# OS-specific files
+# OS files
 .DS_Store
 Thumbs.db
