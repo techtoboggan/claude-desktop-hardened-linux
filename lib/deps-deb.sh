@@ -5,10 +5,9 @@ install_deps() {
     echo "Checking dependencies..."
     DEPS_TO_INSTALL=""
 
-    for cmd in sqlite3 7z wget wrestool icotool convert npx python3 curl fakeroot; do
+    for cmd in 7z wget wrestool icotool convert npx python3 curl fakeroot; do
         if ! check_command "$cmd"; then
             case "$cmd" in
-                "sqlite3")   DEPS_TO_INSTALL="$DEPS_TO_INSTALL sqlite3" ;;
                 "7z")        DEPS_TO_INSTALL="$DEPS_TO_INSTALL p7zip-full" ;;
                 "wget")      DEPS_TO_INSTALL="$DEPS_TO_INSTALL wget" ;;
                 "wrestool"|"icotool") DEPS_TO_INSTALL="$DEPS_TO_INSTALL icoutils" ;;
