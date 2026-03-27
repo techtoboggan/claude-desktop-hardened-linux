@@ -140,7 +140,7 @@ arch_to_deb() {
 # Shared constants
 # ---------------------------------------------------------------------------
 
-PACKAGE_NAME="claude-desktop"
+PACKAGE_NAME="claude-desktop-hardened"
 ARCHITECTURE=$(uname -m)
 MAINTAINER="Claude Desktop Linux Maintainers"
-DESCRIPTION="Claude Desktop for Linux"
+DESCRIPTION="Claude Desktop for Linux (hardened)"

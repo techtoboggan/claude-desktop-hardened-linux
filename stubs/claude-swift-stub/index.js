@@ -47,8 +47,8 @@ const ENV_ALLOWLIST = new Set([
 
 // Allowed binary path prefixes (prevent arbitrary command execution)
 const BINARY_PATH_ALLOWLIST = [
-  '/usr/lib64/claude-desktop/',
-  '/usr/lib/claude-desktop/',
+  '/usr/lib64/claude-desktop-hardened/',
+  '/usr/lib/claude-desktop-hardened/',
   '/usr/local/bin/',
   '/usr/bin/',
   path.join(os.homedir(), '.local', 'bin') + '/',

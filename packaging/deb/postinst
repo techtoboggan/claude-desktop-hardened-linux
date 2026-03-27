@@ -11,7 +11,7 @@ chmod +x /usr/bin/claude 2>/dev/null || true
 
 # Set correct permissions for chrome-sandbox
 SANDBOX_PATHS=(
-    "/usr/lib/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+    "/usr/lib/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
 )
 
 # Also check system electron

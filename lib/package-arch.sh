@@ -2,7 +2,7 @@
 # Arch Linux packaging via makepkg.
 
 set_lib_dir() {
-    export INSTALL_LIB_DIR="/usr/lib/claude-desktop"
+    export INSTALL_LIB_DIR="/usr/lib/claude-desktop-hardened"
 }
 
 build_package() {
@@ -11,12 +11,12 @@ build_package() {
     # Set up makepkg staging
     local ARCH_ROOT="$WORK_DIR/arch-staging"
     rm -rf "$ARCH_ROOT"
-    mkdir -p "$ARCH_ROOT/src/staged/usr/lib/claude-desktop"
+    mkdir -p "$ARCH_ROOT/src/staged/usr/lib/claude-desktop-hardened"
     mkdir -p "$ARCH_ROOT/src/staged/usr/bin"
     mkdir -p "$ARCH_ROOT/src/staged/usr/share"
 
     # Copy staged files
-    cp -r "$INSTALL_DIR/lib/$PACKAGE_NAME/"* "$ARCH_ROOT/src/staged/usr/lib/claude-desktop/"
+    cp -r "$INSTALL_DIR/lib/$PACKAGE_NAME/"* "$ARCH_ROOT/src/staged/usr/lib/claude-desktop-hardened/"
     cp -r "$INSTALL_DIR/bin/"* "$ARCH_ROOT/src/staged/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications" "$ARCH_ROOT/src/staged/usr/share/"
     cp -r "$INSTALL_DIR/share/icons" "$ARCH_ROOT/src/staged/usr/share/"
@@ -37,7 +37,7 @@ build_package() {
     fi
     if eval "$MAKEPKG_CMD" 2>/dev/null; then
         local PKG_FILE
-        PKG_FILE=$(ls claude-desktop-*.pkg.tar.* 2>/dev/null | head -1)
+        PKG_FILE=$(ls claude-desktop-hardened-*.pkg.tar.* 2>/dev/null | head -1)
         if [ -n "$PKG_FILE" ]; then
             # Move to output location
             mkdir -p "$WORK_DIR/electron-app/$ARCHITECTURE"

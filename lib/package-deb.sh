@@ -2,7 +2,7 @@
 # DEB packaging via dpkg-deb.
 
 set_lib_dir() {
-    export INSTALL_LIB_DIR="/usr/lib/claude-desktop"
+    export INSTALL_LIB_DIR="/usr/lib/claude-desktop-hardened"
 }
 
 build_package() {
@@ -15,13 +15,13 @@ build_package() {
     local DEB_ROOT="$WORK_DIR/deb-staging"
     rm -rf "$DEB_ROOT"
     mkdir -p "$DEB_ROOT/DEBIAN"
-    mkdir -p "$DEB_ROOT/usr/lib/claude-desktop"
+    mkdir -p "$DEB_ROOT/usr/lib/claude-desktop-hardened"
     mkdir -p "$DEB_ROOT/usr/bin"
     mkdir -p "$DEB_ROOT/usr/share/applications"
     mkdir -p "$DEB_ROOT/usr/share/icons"
 
     # Copy staged files (prepare.sh put them under $PKG_ROOT/usr/)
-    cp -r "$INSTALL_DIR/lib/$PACKAGE_NAME/"* "$DEB_ROOT/usr/lib/claude-desktop/"
+    cp -r "$INSTALL_DIR/lib/$PACKAGE_NAME/"* "$DEB_ROOT/usr/lib/claude-desktop-hardened/"
     cp -r "$INSTALL_DIR/bin/"* "$DEB_ROOT/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications/"* "$DEB_ROOT/usr/share/applications/"
     cp -r "$INSTALL_DIR/share/icons/"* "$DEB_ROOT/usr/share/icons/"
@@ -38,7 +38,7 @@ build_package() {
     # Build the .deb
     cd "$WORK_DIR/electron-app"
     local DEB_FILE
-    DEB_FILE="$(pwd)/claude-desktop_${VERSION}_${DEB_ARCH}.deb"
+    DEB_FILE="$(pwd)/claude-desktop-hardened_${VERSION}_${DEB_ARCH}.deb"
     fakeroot dpkg-deb --build "$DEB_ROOT" "$DEB_FILE"
 
     if [ -f "$DEB_FILE" ]; then

@@ -1,18 +1,21 @@
-Name:           claude-desktop
+Name:           claude-desktop-hardened
 Version:        @@VERSION@@
 Release:        1
-Summary:        Claude Desktop for Linux
+Summary:        Claude Desktop for Linux (hardened)
 License:        Proprietary
 AutoReqProv:    no
 URL:            https://www.anthropic.com
 BuildArch:      @@ARCHITECTURE@@
 Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils
 Recommends:     bubblewrap, gnome-keyring
+Provides:       claude-desktop = %{version}-%{release}
+Conflicts:      claude-desktop
 
 %description
 Claude is an AI assistant from Anthropic.
 This package provides the desktop interface for Claude with Cowork
-(Local Agent Mode) support for Linux. Includes bundled Claude Code CLI.
+(Local Agent Mode) support for Linux. Includes bubblewrap sandboxing,
+credential redaction, and bundled Claude Code CLI.
 
 %install
 mkdir -p %{buildroot}/usr/lib64/%{name}
@@ -27,11 +30,11 @@ cp -r @@INSTALL_DIR@@/share/applications/* %{buildroot}/usr/share/applications/
 cp -r @@INSTALL_DIR@@/share/icons/* %{buildroot}/usr/share/icons/
 
 %files
-%{_bindir}/claude-desktop
+%{_bindir}/claude-desktop-hardened
 %{_bindir}/claude
 %{_libdir}/%{name}
-%{_datadir}/applications/claude-desktop.desktop
-%{_datadir}/icons/hicolor/*/apps/claude-desktop.png
+%{_datadir}/applications/claude-desktop-hardened.desktop
+%{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png
 
 %post
 # Update icon caches
@@ -45,8 +48,8 @@ chmod +x %{_bindir}/claude 2>/dev/null || :
 # Set correct permissions for chrome-sandbox
 echo "Setting chrome-sandbox permissions..."
 SANDBOX_PATH=""
-if [ -f "/usr/lib64/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox" ]; then
-    SANDBOX_PATH="/usr/lib64/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+if [ -f "/usr/lib64/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox" ]; then
+    SANDBOX_PATH="/usr/lib64/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
 elif [ -n "$SUDO_USER" ]; then
     if su - "$SUDO_USER" -c "command -v electron >/dev/null 2>&1"; then
         ELECTRON_PATH=$(su - "$SUDO_USER" -c "command -v electron")

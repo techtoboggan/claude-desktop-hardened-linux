@@ -1,10 +1,10 @@
 ***THIS IS AN UNOFFICIAL BUILD SCRIPT!***
 
-If you run into an issue, [open an issue here](https://github.com/techtoboggan/claude-desktop-linux/issues). Don't bug Anthropic about it — they already have enough on their plates.
+If you run into an issue, [open an issue here](https://github.com/techtoboggan/claude-desktop-hardened-linux/issues). Don't bug Anthropic about it — they already have enough on their plates.
 
-# Claude Desktop for Linux
+# Claude Desktop for Linux (Hardened)
 
-Builds and packages Claude Desktop for Linux from the official Windows release, with full support for:
+A security-focused Linux build of Claude Desktop from the official Windows release, with **bubblewrap sandboxing**, **credential redaction**, and full support for:
 
 - **Cowork / Local Agent Mode** — sandboxed via [bubblewrap](https://github.com/containers/bubblewrap) when available, or direct execution
 - **MCP** (Model Context Protocol) — configure in `~/.config/Claude/claude_desktop_config.json`
@@ -13,6 +13,17 @@ Builds and packages Claude Desktop for Linux from the official Windows release, 
 - **Native Wayland support** — proper taskbar pinning, window grouping, and icons
 - **Bundled Claude Code CLI** — `claude` command available system-wide after install
 
+### How this differs from `claude-desktop-bin`
+
+The [claude-desktop-bin](https://aur.archlinux.org/packages/claude-desktop-bin) AUR package takes a convenience-first approach — full Computer Use, no sandboxing. This project prioritizes security:
+
+| | **claude-desktop-hardened** | **claude-desktop-bin** |
+|---|---|---|
+| Cowork sandboxing | Bubblewrap (ro `/`, tmpfs over `.ssh/.aws/.gnupg`) | None — host access |
+| Credential redaction | API keys, JWTs, private keys redacted from transcripts | None |
+| Computer Use | Not supported (by design) | Full support (27 tools) |
+| Electron sandbox | `chrome-sandbox` setuid preserved | `--no-sandbox` flag |
+
 ---
 
 ## Installation
@@ -20,42 +31,42 @@ Builds and packages Claude Desktop for Linux from the official Windows release, 
 ### Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-linux/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-hardened-linux/main/install.sh | bash
 ```
 
 Detects your distro, downloads the latest release, and installs it.
 
 ### Fedora Workstation (recommended)
 
-Available from [Fedora COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop/) for Fedora 43 and 44:
+Available from [Fedora COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop-hardened/) for Fedora 43 and 44:
 
 ```bash
-sudo dnf copr enable techtoboggan/claude-desktop
-sudo dnf install claude-desktop
+sudo dnf copr enable techtoboggan/claude-desktop-hardened
+sudo dnf install claude-desktop-hardened
 ```
 
 Updates automatically with `sudo dnf upgrade`. This is the easiest way to stay current.
 
 ### Manual install
 
-Download the latest package for your distro from [Releases](https://github.com/techtoboggan/claude-desktop-linux/releases):
+Download the latest package for your distro from [Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases):
 
 ```bash
 # Fedora / RHEL / Rocky
-sudo dnf install claude-desktop-*.rpm
+sudo dnf install claude-desktop-hardened-*.rpm
 
 # Debian / Ubuntu
-sudo dpkg -i claude-desktop_*.deb && sudo apt-get install -f
+sudo dpkg -i claude-desktop-hardened_*.deb && sudo apt-get install -f
 
 # Arch Linux
-sudo pacman -U claude-desktop-*.pkg.tar.zst
+sudo pacman -U claude-desktop-hardened-*.pkg.tar.zst
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/techtoboggan/claude-desktop-linux.git
-cd claude-desktop-linux
+git clone https://github.com/techtoboggan/claude-desktop-hardened-linux.git
+cd claude-desktop-hardened-linux
 
 # Auto-detects your distro and builds the right package
 sudo ./build.sh
@@ -74,7 +85,7 @@ Requires Node.js >= 18, npm, and root/sudo access. Build dependencies are instal
 
 | Family | Distros | Package | Repo |
 |--------|---------|---------|------|
-| RPM | Fedora 43/44 | `.rpm` | [COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop/) |
+| RPM | Fedora 43/44 | `.rpm` | [COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop-hardened/) |
 | RPM | RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` | — |
 | DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | — |
 | Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` | — |

@@ -36,7 +36,7 @@ prepare_app() {
         mkdir -p "$icon_dir"
         if [ -f "${icon_files[$size]}" ]; then
             log_info "Installing ${size}x${size} icon..."
-            install -Dm 644 "${icon_files[$size]}" "$icon_dir/claude-desktop.png"
+            install -Dm 644 "${icon_files[$size]}" "$icon_dir/claude-desktop-hardened.png"
         else
             log_warn "Missing ${size}x${size} icon"
         fi
@@ -118,7 +118,7 @@ const _cPath=require("path");
 
 // Set desktop filename so Wayland compositors can match the window to the
 // .desktop entry (correct icon, pinning, window grouping).
-_capp.setDesktopName("claude-desktop.desktop");
+_capp.setDesktopName("claude-desktop-hardened.desktop");
 
 // Load icon once; resize to 48px for in-app title bar injection.
 const _iconPath=_cPath.join(__dirname,"..","..","resources","icon.png");
@@ -333,31 +333,31 @@ CLIEOF
     cp -r app.asar.unpacked "$INSTALL_DIR/lib/$PACKAGE_NAME/"
 
     # Desktop entry
-    cat > "$INSTALL_DIR/share/applications/claude-desktop.desktop" << EOF
+    cat > "$INSTALL_DIR/share/applications/claude-desktop-hardened.desktop" << EOF
 [Desktop Entry]
-Name=Claude
-Exec=claude-desktop %u
-Icon=claude-desktop
+Name=Claude (Hardened)
+Exec=claude-desktop-hardened %u
+Icon=claude-desktop-hardened
 Type=Application
 Terminal=false
 Categories=Office;Utility;
 MimeType=x-scheme-handler/claude;
-StartupWMClass=claude-desktop
+StartupWMClass=claude-desktop-hardened
 Actions=quit;
 
 [Desktop Action quit]
 Name=Quit Claude
-Exec=sh -c 'pkill -f "electron.*claude-desktop/app.asar" || pkill -f claude-desktop'
+Exec=sh -c 'pkill -f "electron.*claude-desktop-hardened/app.asar" || pkill -f claude-desktop-hardened'
 EOF
 
     # Launcher script with Wayland detection, keyring support, logging
-    cat > "$INSTALL_DIR/bin/claude-desktop" << LAUNCHEREOF
+    cat > "$INSTALL_DIR/bin/claude-desktop-hardened" << LAUNCHEREOF
 #!/bin/bash
 
 # Tell Chromium/Electron which .desktop file we belong to.
 # This sets the Wayland app_id so the compositor can match windows to the
 # desktop entry (icon, pinning, etc.).
-export CHROME_DESKTOP="claude-desktop.desktop"
+export CHROME_DESKTOP="claude-desktop-hardened.desktop"
 
 # Detect Wayland
 if [ -n "\$WAYLAND_DISPLAY" ] || [ "\$XDG_SESSION_TYPE" = "wayland" ]; then
@@ -376,11 +376,11 @@ else
     KEYRING_FLAG="--password-store=basic"
 fi
 
-LOG_FILE="\$HOME/claude-desktop-launcher.log"
+LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"
 
 exec electron ${INSTALL_LIB_DIR}/app.asar \\
-    --class=claude-desktop \\
-    --name=claude-desktop \\
+    --class=claude-desktop-hardened \\
+    --name=claude-desktop-hardened \\
     --ozone-platform-hint=auto \\
     --enable-logging=file \\
     --log-file="\$LOG_FILE" \\
@@ -388,5 +388,5 @@ exec electron ${INSTALL_LIB_DIR}/app.asar \\
     \$KEYRING_FLAG \\
     "\$@"
 LAUNCHEREOF
-    chmod +x "$INSTALL_DIR/bin/claude-desktop"
+    chmod +x "$INSTALL_DIR/bin/claude-desktop-hardened"
 }

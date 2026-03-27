@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Claude Desktop for Linux — one-line installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-linux/main/install.sh | bash
+# Claude Desktop (Hardened) for Linux — one-line installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-hardened-linux/main/install.sh | bash
 #
 # Detects your distro, downloads the latest release, and installs it.
 
 set -euo pipefail
 
-REPO="techtoboggan/claude-desktop-linux"
+REPO="techtoboggan/claude-desktop-hardened-linux"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
 info()  { echo -e "\033[1;34m::\033[0m $*"; }
@@ -60,7 +60,7 @@ install_rpm() {
     [ -n "$url" ] || err "No RPM found in release $TAG"
 
     local tmp
-    tmp=$(mktemp /tmp/claude-desktop-XXXXXX.rpm)
+    tmp=$(mktemp /tmp/claude-desktop-hardened-XXXXXX.rpm)
     info "Downloading RPM..."
     curl -fSL -o "$tmp" "$url" || err "Download failed"
     ok "Downloaded $(basename "$url")"
@@ -84,7 +84,7 @@ install_deb() {
     [ -n "$url" ] || err "No DEB found in release $TAG"
 
     local tmp
-    tmp=$(mktemp /tmp/claude-desktop-XXXXXX.deb)
+    tmp=$(mktemp /tmp/claude-desktop-hardened-XXXXXX.deb)
     info "Downloading DEB..."
     curl -fSL -o "$tmp" "$url" || err "Download failed"
     ok "Downloaded $(basename "$url")"
@@ -100,7 +100,7 @@ install_arch() {
     [ -n "$url" ] || err "No PKGBUILD found in release $TAG"
 
     local tmpdir
-    tmpdir=$(mktemp -d /tmp/claude-desktop-XXXXXX)
+    tmpdir=$(mktemp -d /tmp/claude-desktop-hardened-XXXXXX)
     info "Downloading PKGBUILD..."
     curl -fSL -o "$tmpdir/PKGBUILD" "$url" || err "Download failed"
     ok "Downloaded PKGBUILD"
@@ -113,7 +113,7 @@ install_arch() {
 # --- Main ---
 main() {
     echo ""
-    echo "  Claude Desktop for Linux — Installer"
+    echo "  Claude Desktop (Hardened) for Linux — Installer"
     echo "  ────────────────────────────────────"
     echo ""
 
@@ -132,7 +132,7 @@ main() {
     esac
 
     echo ""
-    ok "Claude Desktop installed! Launch it from your application menu or run: claude-desktop"
+    ok "Claude Desktop (Hardened) installed! Launch it from your application menu or run: claude-desktop-hardened"
     echo ""
 }
 

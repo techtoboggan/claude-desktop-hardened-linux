@@ -1,8 +1,8 @@
 # Maintainer: Claude Desktop Linux Maintainers
-pkgname=claude-desktop
+pkgname=claude-desktop-hardened
 pkgver=@@VERSION@@
 pkgrel=1
-pkgdesc="Claude Desktop for Linux with Cowork (Local Agent Mode) support"
+pkgdesc="Claude Desktop for Linux (hardened) — bubblewrap sandboxing, credential redaction"
 arch=('x86_64' 'aarch64')
 url="https://www.anthropic.com"
 license=('custom:Proprietary')
@@ -10,6 +10,8 @@ depends=('nodejs' 'npm' 'electron' 'p7zip' 'icoutils' 'imagemagick' 'xdg-utils')
 optdepends=('bubblewrap: sandboxed Cowork sessions'
             'socat: IPC support'
             'gnome-keyring: credential storage')
+provides=('claude-desktop')
+conflicts=('claude-desktop' 'claude-desktop-bin')
 
 # This PKGBUILD operates on a pre-built staging directory.
 # Run the build pipeline first, then makepkg from the staging dir.
@@ -19,7 +21,7 @@ package() {
     cp -r "${srcdir}/staged/usr" "${pkgdir}/usr"
 
     # Fix chrome-sandbox permissions
-    local sandbox="${pkgdir}/usr/lib/claude-desktop/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+    local sandbox="${pkgdir}/usr/lib/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
     if [ -f "$sandbox" ]; then
         chmod 4755 "$sandbox"
     fi

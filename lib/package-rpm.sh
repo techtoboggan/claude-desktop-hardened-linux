@@ -2,15 +2,15 @@
 # RPM packaging via rpmbuild.
 
 set_lib_dir() {
-    export INSTALL_LIB_DIR="/usr/lib64/claude-desktop"
+    export INSTALL_LIB_DIR="/usr/lib64/claude-desktop-hardened"
 }
 
 build_package() {
     log_step "📦" "Building RPM package..."
 
     # Generate spec from template
-    local SPEC_IN="$SCRIPT_DIR/packaging/rpm/claude-desktop.spec.in"
-    local SPEC_OUT="$WORK_DIR/claude-desktop.spec"
+    local SPEC_IN="$SCRIPT_DIR/packaging/rpm/claude-desktop-hardened.spec.in"
+    local SPEC_OUT="$WORK_DIR/claude-desktop-hardened.spec"
 
     sed -e "s|@@VERSION@@|${VERSION}|g" \
         -e "s|@@ARCHITECTURE@@|${ARCHITECTURE}|g" \
@@ -24,7 +24,7 @@ build_package() {
     mkdir -p "${WORK_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
     cd "$WORK_DIR/electron-app"
-    RPM_FILE="$(pwd)/${ARCHITECTURE}/claude-desktop-${VERSION}-1.${ARCHITECTURE}.rpm"
+    RPM_FILE="$(pwd)/${ARCHITECTURE}/claude-desktop-hardened-${VERSION}-1.${ARCHITECTURE}.rpm"
     if rpmbuild -bb \
         --define "_topdir ${WORK_DIR}" \
         --define "_rpmdir $(pwd)" \
