@@ -322,7 +322,10 @@ jobs:
         run: |
           SRPM=$(find ~/rpmbuild/SRPMS/ -name '*.src.rpm' | head -1)
           echo "Uploading $SRPM"
-          copr-cli build claude-desktop "$SRPM" --nowait
+          copr-cli build claude-desktop "$SRPM" \
+            --chroot fedora-43-x86_64 \
+            --chroot fedora-44-x86_64 \
+            --nowait
 
   # ---------------------------------------------------------------------------
   # TODO: Publish APT repository to GitHub Pages (enable when GPG key is set up)
