@@ -19,6 +19,9 @@ jobs:
         run: |
           node --test tests/test_credential_classifier.js
           node --test tests/test_path_safety.js
+          node --test tests/test_computer_use.js
+          node --test tests/test_bwrap_command.js
+          node --test tests/test_session_store.js
 
       - name: Run unit tests (Python)
         run: python3 -m unittest tests/test_patches.py -v

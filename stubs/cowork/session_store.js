@@ -9,18 +9,20 @@ const fs = require('fs');
 const path = require('path');
 const { SESSIONS_DIR } = require('./dirs');
 
-const STORE_FILE = path.join(SESSIONS_DIR, 'sessions.json');
-
 class SessionStore {
-  constructor() {
+  /**
+   * @param {string} [baseDir] — override sessions directory (for testing)
+   */
+  constructor(baseDir) {
+    this._storeFile = path.join(baseDir || SESSIONS_DIR, 'sessions.json');
     this._sessions = new Map();
     this._load();
   }
 
   _load() {
     try {
-      if (fs.existsSync(STORE_FILE)) {
-        const data = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+      if (fs.existsSync(this._storeFile)) {
+        const data = JSON.parse(fs.readFileSync(this._storeFile, 'utf8'));
         if (Array.isArray(data)) {
           for (const session of data) {
             this._sessions.set(session.id, session);
@@ -34,10 +36,10 @@ class SessionStore {
 
   _save() {
     try {
-      const dir = path.dirname(STORE_FILE);
+      const dir = path.dirname(this._storeFile);
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       const data = Array.from(this._sessions.values());
-      fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
+      fs.writeFileSync(this._storeFile, JSON.stringify(data, null, 2), { mode: 0o600 });
     } catch (err) {
       console.error('[cowork-linux] Failed to save session store:', err.message);
     }
