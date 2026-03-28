@@ -191,6 +191,56 @@ _capp.on("ready",()=>{
       try{_ipc.handle(ch,handler);}catch(_){}
     }
     console.log("[cowork-linux] Registered ComputerUseTcc stubs");
+
+    // Wayland global shortcut: Electron's globalShortcut.register doesn't work
+    // on Wayland. Register via XDG Desktop Portal and listen for activation.
+    if(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY){
+      try{
+        const{spawn:_spawn}=require("child_process");
+        const{BrowserWindow:_BW}=require("electron");
+        // Register shortcut via gdbus call to GlobalShortcuts portal
+        const _regChild=_spawn("gdbus",["call","--session",
+          "--dest","org.freedesktop.portal.Desktop",
+          "--object-path","/org/freedesktop/portal/desktop",
+          "--method","org.freedesktop.portal.GlobalShortcuts.CreateSession",
+          "{'handle_token':<'claude_shortcuts'>,'session_handle_token':<'claude_session'>}"],
+          {stdio:["pipe","pipe","pipe"]});
+        _regChild.stdout.on("data",d=>{
+          const _out=d.toString();
+          // After session created, bind the shortcut
+          if(_out.includes("/")){
+            const _sessionPath=_out.match(/objectpath '([^']+)'/)?.[1]||"/org/freedesktop/portal/desktop/session/claude_session";
+            _spawn("gdbus",["call","--session",
+              "--dest","org.freedesktop.portal.Desktop",
+              "--object-path","/org/freedesktop/portal/desktop",
+              "--method","org.freedesktop.portal.GlobalShortcuts.BindShortcuts",
+              _sessionPath,
+              "[('claude-quick-entry',{'description':<'Claude Quick Entry'>,'preferred_trigger':<'<ctrl><alt>space'>})]",
+              "''","{}"],{stdio:"ignore"});
+            console.log("[cowork-linux] Registered Ctrl+Alt+Space via GlobalShortcuts portal");
+            // Monitor for activation signal
+            const _monitor=_spawn("gdbus",["monitor","--session",
+              "--dest","org.freedesktop.portal.Desktop",
+              "--object-path",_sessionPath],
+              {stdio:["pipe","pipe","pipe"]});
+            _monitor.stdout.on("data",sig=>{
+              if(sig.toString().includes("Activated")){
+                // Bring Claude to front or toggle quick entry
+                const _wins=_BW.getAllWindows();
+                if(_wins.length>0){
+                  const _w=_wins[0];
+                  if(_w.isVisible()&&_w.isFocused()){_w.hide();}
+                  else{_w.show();_w.focus();}
+                }
+              }
+            });
+            _monitor.on("error",()=>{});
+            _capp.on("before-quit",()=>{try{_monitor.kill();}catch(_){}});
+          }
+        });
+        _regChild.on("error",()=>{console.log("[cowork-linux] GlobalShortcuts portal not available — use claude-desktop-hardened --focus");});
+      }catch(ex){console.log("[cowork-linux] Portal shortcut setup failed:",ex.message);}
+    }
   },2000);
 });
 
