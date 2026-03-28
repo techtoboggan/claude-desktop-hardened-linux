@@ -4,11 +4,11 @@ If you run into an issue, [open an issue here](https://github.com/techtoboggan/c
 
 # Claude Desktop for Linux (Hardened)
 
-A security-focused Linux build of Claude Desktop. Downloads the official release, applies bubblewrap sandboxing, credential redaction, and permission-gated Computer Use — then packages it for Fedora, Debian/Ubuntu, and Arch.
+A security-focused Linux build of Claude Desktop. Downloads the official release, applies bubblewrap sandboxing, credential redaction, and permission-gated Computer Use — then packages it for Fedora, Debian/Ubuntu, and Arch Linux.
 
 ## Features
 
-- **Cowork / Local Agent Mode** — sandboxed via [bubblewrap](https://github.com/containers/bubblewrap) with read-only filesystem, tmpfs over sensitive directories, credential redaction, and environment allowlisting
+- **Cowork / Local Agent Mode** — sandboxed via [bubblewrap](https://github.com/containers/bubblewrap) with default-deny filesystem, resource limits, credential redaction, and environment allowlisting
 - **Computer Use** — screenshot, click, type, and scroll automation for both X11 and Wayland, gated by a per-session permission dialog (no auto-grant)
 - **MCP** (Model Context Protocol) — configure servers in `~/.config/Claude/claude_desktop_config.json`
 - **Ctrl+Alt+Space** quick entry popup
@@ -17,66 +17,11 @@ A security-focused Linux build of Claude Desktop. Downloads the official release
 - **Bundled Claude Code CLI** — `claude` command available system-wide after install
 - **Diagnostic tool** — `claude-desktop-hardened --doctor` checks your system for missing dependencies and misconfigurations
 
-## Security model
-
-This project treats Claude's agentic capabilities as a security boundary. Every feature that touches the host system is sandboxed, logged, or gated behind user confirmation.
-
-### Cowork sandboxing
-
-When Cowork spawns a Claude Code session, it runs inside a [bubblewrap](https://github.com/containers/bubblewrap) sandbox with a default-deny filesystem policy:
-
-- **Minimal rootfs** — only `/usr`, `/lib`, `/lib64`, and select `/etc` files are mounted read-only. The agent cannot see your home directory, browser data, password managers, or other users' files.
-- **Writable mounts** limited to the working directory, session data, and `~/.config/Claude`
-- **Resource limits** via `systemd-run` — 4GB memory, 200% CPU (2 cores), 512 max tasks to prevent runaway processes and fork bombs
-- `--die-with-parent` ensures cleanup if the parent process exits
-- Environment variables filtered through an allowlist (HOME, PATH, DISPLAY, XDG_*, etc.)
-- **No unsandboxed fallback** — if bubblewrap is not found, sessions refuse to start
-
-Bubblewrap is a **hard dependency** — if you're using this package, you get sandboxing. That's the point.
-
-### Network access
-
-Sandboxed sessions have **full network access**. Claude Code needs HTTPS to `api.anthropic.com` to function, and isolating the network would break core functionality. This means the agent can theoretically reach internal services on your network. If you run services on localhost or your LAN that accept unauthenticated requests, be aware of this. We may add network policy support (via nftables or a proxy) in a future release.
-
-### Computer Use permissions
-
-On other platforms, Computer Use permissions are auto-granted. Here, every permission request shows a native dialog:
-
-- **Screen Recording** — screenshot capture via `grim` (Wayland) or `scrot` (X11)
-- **Input Automation** — click/type/scroll via `ydotool` (Wayland) or `xdotool` (X11)
-- **Window Listing** — via `hyprctl`/`swaymsg` (Wayland) or `wmctrl` (X11)
-
-Grants are session-only — they reset when you close Claude Desktop. All Computer Use actions are logged to the transcript store with credential redaction applied.
-
-### Credential redaction
-
-All session transcripts are scrubbed before hitting disk:
-
-- Bearer tokens, API keys (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, npm, PyPI)
-- JWTs, OAuth tokens, private keys, database connection strings
-- Google Cloud service account key IDs
-- Generic secrets in environment-style assignments
-- Sensitive environment variables filtered from subprocess environments
-
-### Electron sandbox
-
-The `chrome-sandbox` binary is set to `4755 root:root` (setuid) during post-install. This preserves Electron's multi-process sandbox — the renderer runs in a restricted namespace even if the main process is compromised.
-
-### Supply chain integrity
-
-- nupkg SHA256 verified against the pin in `CLAUDE_VERSION`
-- Release packages verified via `SHA256SUMS` with optional GPG signature
-- Source scanned for trojan source / Unicode attacks on every PR and push
-- Dependency vulnerability and malware scanning via OWASP depscan and vet
-- npm install runs with `--ignore-scripts` to prevent arbitrary code execution during build
-- CycloneDX SBOM attached to every release
-- Automated upstream version monitoring creates PRs for new releases
-
 ---
 
 ## Installation
 
-### Fedora (recommended)
+### Fedora (COPR)
 
 Available from [Fedora COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop-hardened/) for Fedora 43 and 44:
 
@@ -116,7 +61,7 @@ sudo apt install claude-desktop-hardened
 curl -fsSL https://raw.githubusercontent.com/techtoboggan/claude-desktop-hardened-linux/main/install.sh | bash
 ```
 
-Detects your distro, downloads the latest release, and installs it.
+Detects your distro, downloads the latest release from GitHub, verifies SHA256 checksums, and installs it.
 
 ### Manual install
 
@@ -148,7 +93,7 @@ sudo FORMAT=deb ./build.sh
 sudo FORMAT=arch ./build.sh
 ```
 
-Requires Node.js >= 18, npm, and root/sudo access. Build dependencies are installed automatically.
+Requires Node.js 18-23, npm, and root/sudo access. Build dependencies are installed automatically.
 
 ---
 
@@ -157,10 +102,9 @@ Requires Node.js >= 18, npm, and root/sudo access. Build dependencies are instal
 | Family | Distros | Package | Repo |
 |--------|---------|---------|------|
 | RPM | Fedora 43/44 | `.rpm` | [COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop-hardened/) |
-| RPM | RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` | manual |
-| DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | manual |
+| RPM | RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` | [GitHub Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) |
+| DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | [APT repo](https://techtoboggan.github.io/claude-desktop-hardened-linux) |
 | Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` | [AUR](https://aur.archlinux.org/packages/claude-desktop-hardened-bin) |
-| NixOS | [k3d3/claude-desktop-linux-flake](https://github.com/k3d3/claude-desktop-linux-flake) | Nix flake | external |
 
 x86_64 only.
 
@@ -185,6 +129,9 @@ Install the tools for your display server to enable Computer Use:
 # Fedora
 sudo dnf install grim slurp wl-clipboard ydotool wlr-randr
 
+# Debian / Ubuntu
+sudo apt install grim slurp wl-clipboard ydotool wlr-randr
+
 # Arch
 sudo pacman -S grim slurp wl-clipboard ydotool wlr-randr
 ```
@@ -193,6 +140,9 @@ sudo pacman -S grim slurp wl-clipboard ydotool wlr-randr
 ```bash
 # Fedora
 sudo dnf install wmctrl xdotool scrot xclip xrandr
+
+# Debian / Ubuntu
+sudo apt install wmctrl xdotool scrot xclip x11-xserver-utils
 
 # Arch
 sudo pacman -S wmctrl xdotool scrot xclip xorg-xrandr
@@ -215,6 +165,100 @@ Configure MCP servers in `~/.config/Claude/claude_desktop_config.json`:
 
 ---
 
+## Security model
+
+This project treats Claude's agentic capabilities as a security boundary. Every feature that touches the host system is sandboxed, logged, or gated behind user confirmation.
+
+### Cowork sandboxing
+
+When Cowork spawns a Claude Code session, it runs inside a [bubblewrap](https://github.com/containers/bubblewrap) sandbox with a default-deny filesystem policy:
+
+- **Minimal rootfs** — only `/usr`, `/lib`, `/lib64`, and select `/etc` files are mounted read-only. The agent cannot see your home directory, browser data, password managers, or other users' files.
+- **Writable mounts** limited to the working directory, session data, and `~/.config/Claude`
+- **Resource limits** via `systemd-run` — 4GB memory, 200% CPU (2 cores), 512 max tasks to prevent runaway processes and fork bombs
+- **`--die-with-parent`** ensures cleanup if the parent process exits
+- **Environment allowlisting** — only safe variables pass through (HOME, PATH, DISPLAY, XDG_*, etc.)
+- **No unsandboxed fallback** — if bubblewrap is not found, sessions refuse to start
+
+Bubblewrap is a **hard dependency** — if you're using this package, you get sandboxing. That's the point.
+
+### Network access
+
+Sandboxed sessions have **full network access**. Claude Code needs HTTPS to `api.anthropic.com` to function, and isolating the network would break core functionality. This means the agent can theoretically reach internal services on your network. If you run services on localhost or your LAN that accept unauthenticated requests, be aware of this. We may add network policy support (via nftables or a proxy) in a future release.
+
+### Computer Use permissions
+
+Every Computer Use permission request shows a native dialog — nothing is auto-granted:
+
+- **Screen Recording** — screenshot capture via `grim` (Wayland) or `scrot` (X11)
+- **Input Automation** — click/type/scroll via `ydotool` (Wayland) or `xdotool` (X11)
+- **Window Listing** — via `hyprctl`/`swaymsg` (Wayland) or `wmctrl` (X11)
+
+Grants are session-only — they reset when you close Claude Desktop. All Computer Use actions are logged to the transcript store with credential redaction applied.
+
+### Credential redaction
+
+All session transcripts are scrubbed before hitting disk:
+
+- Bearer tokens, API keys (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, npm, PyPI)
+- JWTs, OAuth tokens, private keys, database connection strings
+- Google Cloud service account key IDs
+- Generic secrets in environment-style assignments
+- Sensitive environment variables filtered from subprocess environments
+
+### Path safety
+
+File operations are checked against a blocklist that includes sensitive directories (`.ssh`, `.gnupg`, `.aws`, `.kube`, `.docker`) and persistence vectors (`.bashrc`, `.profile`, `.config/autostart`, `cron`). Path traversal (`..`) is blocked at the raw input level before normalization.
+
+### Electron sandbox
+
+The `chrome-sandbox` binary is set to `4755 root:root` (setuid) during post-install. This preserves Electron's multi-process sandbox — the renderer runs in a restricted namespace even if the main process is compromised.
+
+---
+
+## Supply chain integrity
+
+### Version pinning
+
+Two files control all external dependency versions:
+
+- **`CLAUDE_VERSION`** — pins the exact Claude Desktop release (version + SHA256 of the nupkg)
+- **`TOOL_VERSIONS`** — pins Electron, asar, cdxgen, Claude CLI, vet, and container image digests
+
+All GitHub Actions are pinned to full commit SHAs. Container images are pinned to SHA256 digests. npm packages are installed with `--ignore-scripts`.
+
+### CI pipeline
+
+Every push and PR runs:
+
+- **Unit tests** — credential classifier (19 tests), path safety (9 tests), patch system (19 tests), doctor integration (7 tests)
+- **Package smoke tests** — verifies each built package contains expected files, correct permissions, valid desktop entry, and reasonable size
+- **Source integrity** — trojan source / Unicode attack scanning on all JS, shell, and Python files
+- **Dependency scanning** — OWASP depscan for vulnerabilities, vet for malware
+- **Post-patch validation** — `node --check` verifies patched JS is syntactically valid
+- **SBOM** — CycloneDX bill of materials attached to every release
+
+### Automated updates
+
+A CI workflow checks for new Claude Desktop releases daily. When a new version is found, it:
+
+1. Downloads the new nupkg and computes its SHA256
+2. Test-builds an RPM in a Fedora container to verify patches apply cleanly
+3. Validates the patched JS with `node --check`
+4. If everything passes, pushes the version bump to `main` (which triggers the release pipeline)
+5. If the build fails, opens a GitHub issue with diagnostics and the build log
+
+### Release pipeline
+
+When `CLAUDE_VERSION` changes on `main`, the release workflow:
+
+1. Builds RPM, DEB, and Arch packages in pinned containers
+2. Generates a CycloneDX SBOM
+3. Creates a GitHub Release with SHA256SUMS (GPG-signed if key is configured)
+4. Publishes to Fedora COPR, GitHub Pages APT repo, and AUR automatically
+
+---
+
 ## How it works
 
 Claude Desktop ships as a Windows `.exe` installer containing an Electron app. The build script:
@@ -228,7 +272,7 @@ Claude Desktop ships as a Windows `.exe` installer containing an Electron app. T
 7. **Patches window decorations** — switches from macOS `hiddenInset` to Electron CSD with transparent title bar overlay
 8. **Injects startup code** — sets the window icon, fixes the system tray, sets Wayland `app_id`, and registers permission-gated Computer Use handlers
 9. **Inverts tray icons** for dark Linux system trays
-10. **Bundles Claude Code CLI** from npm
+10. **Bundles Claude Code CLI** from npm (pinned version, `--ignore-scripts`)
 11. **Packages** as RPM, DEB, or Arch with post-install hooks for icon caches, desktop database updates, and chrome-sandbox setuid
 
 ### Patch architecture
@@ -248,16 +292,15 @@ Platform patches are modular — each lives in its own file under `patches/`:
 
 This makes version bumps easier — when upstream renames minified symbols, you update one file instead of a monolithic script.
 
----
+### Package metadata
 
-## Version pinning
+All packaging specs (RPM, DEB, Arch, COPR repackage) are generated from a single source of truth:
 
-`CLAUDE_VERSION` pins the exact Claude Desktop release:
+```bash
+python3 packaging/generate-specs.py
+```
 
-- **Line 1**: version string (e.g., `1.1.9134`)
-- **Line 2**: SHA256 of the nupkg for supply chain verification
-
-A daily CI workflow checks for new upstream releases and creates a PR with the updated version and hash. To update manually: change line 1, update the hash, commit and push to `main`. The release workflow builds, tags, and publishes automatically.
+This reads `packaging/metadata.json` and outputs all four spec files, ensuring dependencies, file lists, and descriptions never drift.
 
 ---
 
