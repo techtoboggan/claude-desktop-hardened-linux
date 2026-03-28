@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>claude-desktop-hardened APT Repository</title></head>
+<body>
+<h1>claude-desktop-hardened APT Repository</h1>
+<p>Add this repository:</p>
+<pre>
+curl -fsSL https://techtoboggan.github.io/claude-desktop-hardened-linux/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/claude-desktop-hardened.gpg
+echo "deb [signed-by=/usr/share/keyrings/claude-desktop-hardened.gpg] https://techtoboggan.github.io/claude-desktop-hardened-linux stable main" | sudo tee /etc/apt/sources.list.d/claude-desktop-hardened.list
+sudo apt update
+sudo apt install claude-desktop-hardened
+</pre>
+</body>
+</html>

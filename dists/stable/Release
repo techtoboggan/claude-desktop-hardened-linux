@@ -1,0 +1,7 @@
+Origin: claude-desktop-hardened
+Label: Claude Desktop Hardened Linux
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: Security-focused Claude Desktop for Linux
