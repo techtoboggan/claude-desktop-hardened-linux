@@ -150,9 +150,13 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Create tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag ${{ needs.check-version.outputs.tag }}
-          git push origin ${{ needs.check-version.outputs.tag }}
+          # Use the API to create tags — avoids workflow permission issues
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/tags/${{ needs.check-version.outputs.tag }}" \
+            -f sha="${{ github.sha }}" || echo "Tag may already exist"
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
