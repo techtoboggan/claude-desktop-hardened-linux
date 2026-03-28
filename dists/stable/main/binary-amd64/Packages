@@ -11,11 +11,11 @@ Suggests: wmctrl, xdotool, scrot, xclip, x11-xserver-utils,
  grim, slurp, wl-clipboard, ydotool, wlr-randr
 Conflicts: claude-desktop
 Filename: pool/main/claude-desktop-hardened_1.1.9310_amd64.deb
-Size: 28098786
-MD5sum: f7e377920e77f2664cfd3ba55d9bdb6a
-SHA1: 0ce454a7165a2eacdd7f797daef9e2e3e3e87819
-SHA256: c6c42e996239044e2779761b49f3c2cac950f6cddf0ba800496033461cd8f718
-SHA512: f56771ceb860eadf97e45008f68926de56a8c13ca96c81cf122de29a3b1571ca2a28dccc7d3f9067f731cb716653093362a529c0d7caf52a35334d6507d5d6f1
+Size: 28097384
+MD5sum: d6d4226bbc3786babd654e528cbe5cc6
+SHA1: c3bb599ca49b0b56341376fd5ab0c87e2fb4f56a
+SHA256: d24d9e37ef84368d5e68d9a6f2e77d0c3d3e76f1c7725918d4b2e61bf5826e18
+SHA512: ea6941f27b6aec1fdce8430468ac60f6fc777441968521dc9428370eba5c78b71f9a1eba88e5fe4a27b59b197f0935e3d78654ac38b2698d2fc8eac952812342
 Homepage: https://github.com/techtoboggan/claude-desktop-hardened-linux
 Description: Claude Desktop for Linux (hardened)
  Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.
