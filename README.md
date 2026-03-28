@@ -1,6 +1,6 @@
-***THIS IS AN UNOFFICIAL BUILD SCRIPT!***
+***This is an unofficial, community-maintained project. It is not affiliated with or endorsed by Anthropic.***
 
-If you run into an issue, [open an issue here](https://github.com/techtoboggan/claude-desktop-hardened-linux/issues). Don't bug Anthropic about it — they already have enough on their plates.
+This project repackages the official Claude Desktop release for Linux with additional security hardening (bubblewrap sandboxing, credential redaction, permission-gated Computer Use). Anthropic does not provide support for this build — if you run into an issue, [open an issue on our tracker](https://github.com/techtoboggan/claude-desktop-hardened-linux/issues), not Anthropic's.
 
 # Claude Desktop for Linux (Hardened)
 
