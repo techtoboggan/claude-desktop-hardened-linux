@@ -5,17 +5,17 @@ Priority: optional
 Section: utils
 Maintainer: Claude Desktop Linux Maintainers
 Provides: claude-desktop
-Depends: nodejs (>= 18.0.0), nodejs (<< 24.0.0), npm, p7zip-full, xdg-utils, bubblewrap
+Depends: nodejs (>= 18.0.0), npm, p7zip-full, xdg-utils, bubblewrap
 Recommends: gnome-keyring
 Suggests: wmctrl, xdotool, scrot, xclip, x11-xserver-utils,
  grim, slurp, wl-clipboard, ydotool, wlr-randr
 Conflicts: claude-desktop
 Filename: pool/main/claude-desktop-hardened_1.1.9310_amd64.deb
-Size: 28098044
-MD5sum: 856ad834ed247bbe4907fb9f0fa0eecd
-SHA1: 3ca1452cde8666af46f6f5285c7836ab2359401b
-SHA256: 87d6a9ee47a012ebe0491e85711beafcc210959dfa9bac4915b457739bb91f72
-SHA512: 16a456b743d8ac86002fb811935c484c87d5a9dcd6e41ddfe4df8d6eb1c91408f19fd4ef1b87f19c0dbde84530bc880df33d7a96c2eec3afa84d1cb996357981
+Size: 28097996
+MD5sum: 3dcfd7d582ec5c1cce18eb50479c128e
+SHA1: d4c51affdd4f9136781ad06a59227807f8213871
+SHA256: 1a10482cb0a349f998eb6d53ecbca5233cfbdff662bc3f5e995e00ec8f11dc61
+SHA512: d2319cceb4d54531fcd66daac937d2c8d3cd59c94c8c77dc7419e3a48a195b9fb52dab4ea0e1fc228617b661b301132a846e79be930aa20743800883f804ddc6
 Homepage: https://github.com/techtoboggan/claude-desktop-hardened-linux
 Description: Claude Desktop for Linux (hardened)
  Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.
