@@ -369,6 +369,9 @@ jobs:
           ref: gh-pages
           fetch-depth: 0
 
+      - name: Install APT repo tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils
+
       - name: Download DEB from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
