@@ -376,10 +376,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          rm -rf ./incoming
           gh release download "${{ needs.check-version.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --pattern "*.deb" \
-            --dir ./incoming
+            --dir ./incoming \
+            --clobber
 
       - name: Update APT repository
         env:
