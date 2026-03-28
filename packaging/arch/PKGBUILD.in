@@ -1,4 +1,4 @@
-# Maintainer: Claude Desktop Linux Maintainers
+# Maintainer: Tristan <https://github.com/techtoboggan>
 pkgname=claude-desktop-hardened
 pkgver=@@VERSION@@
 pkgrel=1
