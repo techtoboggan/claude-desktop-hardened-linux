@@ -194,30 +194,45 @@ _capp.on("ready",()=>{
 });
 
 // Wayland window activation fix: BrowserWindow.show()/focus() are no-ops on
-// KDE Wayland. Override them to use KWin scripting for reliable activation.
+// most Wayland compositors due to focus-stealing prevention. Override them
+// to use compositor-specific activation that bypasses the restriction.
 if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY)){
   const _origShow=require("electron").BrowserWindow.prototype.show;
   const _origFocus=require("electron").BrowserWindow.prototype.focus;
-  const _activateViaKWin=function(){
-    if(process.env.XDG_CURRENT_DESKTOP==="KDE"){
-      try{
-        const{execFileSync}=require("child_process");
-        const _fs=require("fs");
+  const{execFileSync:_execSync}=require("child_process");
+  const _fs=require("fs");
+  const _desktop=process.env.XDG_CURRENT_DESKTOP||"";
+  const _activateWayland=function(){
+    try{
+      if(_desktop==="KDE"){
+        // KWin scripting: ask the compositor to set active window
         const _tmp="/tmp/kwin-claude-activate-"+process.pid+".js";
         _fs.writeFileSync(_tmp,'const c=workspace.stackingOrder;for(let i=0;i<c.length;i++){if(c[i].resourceClass&&c[i].resourceClass.toString().toLowerCase().includes("claude")){workspace.activeWindow=c[i];break;}}');
-        execFileSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.loadScript",_tmp],{timeout:2000});
-        execFileSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.start"],{timeout:2000});
+        _execSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.loadScript",_tmp],{timeout:2000});
+        _execSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.start"],{timeout:2000});
         try{_fs.unlinkSync(_tmp);}catch(_){}
-      }catch(_){}
-    }
+      }else if(_desktop.includes("Hyprland")||_fs.existsSync("/usr/bin/hyprctl")){
+        // Hyprland: find Claude window by class and focus it
+        const _clients=JSON.parse(_execSync("/usr/bin/hyprctl",["clients","-j"],{encoding:"utf8",timeout:2000}));
+        const _w=_clients.find(c=>(c.class||"").toLowerCase().includes("claude"));
+        if(_w)_execSync("/usr/bin/hyprctl",["dispatch","focuswindow","address:"+_w.address],{timeout:2000});
+      }else if(_fs.existsSync("/usr/bin/swaymsg")){
+        // Sway/wlroots: focus by app_id
+        _execSync("/usr/bin/swaymsg",["[app_id=claude-desktop-hardened]","focus"],{timeout:2000});
+      }else if(_desktop==="GNOME"&&_fs.existsSync("/usr/bin/gdbus")){
+        // GNOME: use gnome-shell eval to activate by WM class
+        _execSync("/usr/bin/gdbus",["call","--session","--dest","org.gnome.Shell","--object-path","/org/gnome/Shell","--method","org.gnome.Shell.Eval",
+          'global.get_window_actors().find(a=>{let m=a.meta_window;return m&&(m.get_wm_class()||\"\").toLowerCase().includes(\"claude\")})?.meta_window.activate(global.get_current_time())'],{timeout:2000});
+      }
+    }catch(_){}
   };
   require("electron").BrowserWindow.prototype.show=function(){
     _origShow.call(this);
-    _activateViaKWin();
+    _activateWayland();
   };
   require("electron").BrowserWindow.prototype.focus=function(){
     _origFocus.call(this);
-    _activateViaKWin();
+    _activateWayland();
   };
 }
 
