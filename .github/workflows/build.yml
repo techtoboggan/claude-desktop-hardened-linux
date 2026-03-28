@@ -10,7 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run unit tests (Node.js)
+        run: |
+          node --test tests/test_credential_classifier.js
+          node --test tests/test_path_safety.js
+
+      - name: Run unit tests (Python)
+        run: python3 -m unittest tests/test_patches.py -v
+
+      - name: Run integration tests
+        run: bash tests/test_doctor.sh
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:

@@ -171,9 +171,9 @@ function translatePath(vmPath) {
  */
 function isPathSafe(p) {
   if (!p || typeof p !== 'string') return false;
+  // Block path traversal — check raw input before normalize resolves it
+  if (p.includes('..')) return false;
   const normalized = path.normalize(p);
-  // Block path traversal
-  if (normalized.includes('..')) return false;
   // Block access to sensitive directories and persistence vectors
   const sensitive = [
     '.ssh', '.gnupg', '.aws', '.kube', '.docker',
