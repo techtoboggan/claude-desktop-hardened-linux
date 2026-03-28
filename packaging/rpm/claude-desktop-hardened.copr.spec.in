@@ -7,7 +7,7 @@
 
 Name:           claude-desktop-hardened
 Version:        ${VERSION}
-Release:        1%{?dist}
+Release:        ${RELEASE_NUM}%{?dist}
 Summary:        Claude Desktop for Linux (hardened)
 License:        Proprietary
 URL:            https://github.com/techtoboggan/claude-desktop-hardened-linux

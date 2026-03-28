@@ -283,8 +283,11 @@ jobs:
           tar czf claude-desktop-hardened-${VERSION}.tar.gz -C extract .
 
           # Use the generated COPR spec from the repo (single source of truth)
+          # Extract build number from tag (v1.1.9310-9 → 9) for RPM release field
           export VERSION
-          envsubst '$VERSION' < source/packaging/rpm/claude-desktop-hardened.copr.spec.in > claude-desktop-hardened.spec
+          export RELEASE_NUM=$(echo "$TAG" | grep -oP '\d+$')
+          echo "COPR spec: version=${VERSION} release=${RELEASE_NUM}"
+          envsubst '$VERSION $RELEASE_NUM' < source/packaging/rpm/claude-desktop-hardened.copr.spec.in > claude-desktop-hardened.spec
 
           # Build SRPM
           rpmdev-setuptree
