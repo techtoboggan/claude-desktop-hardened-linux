@@ -36,16 +36,16 @@ echo
 # Test 1: Script exists and is executable
 check "doctor.sh exists" "pass" test -x "$DOCTOR"
 
-# Test 2: Script runs without crashing
-check "doctor.sh runs" "pass" bash "$DOCTOR"
+# Test 2: Script runs without crashing (exit code 1 is expected when tools are missing)
+check "doctor.sh runs without crashing" "pass" bash -c "bash '$DOCTOR' >/dev/null 2>&1; [ \$? -le 1 ]"
 
 # Test 3: Output contains expected sections
-OUTPUT=$(bash "$DOCTOR" 2>&1)
-check "output contains Electron section" "pass" echo "$OUTPUT" | grep -q "Electron"
-check "output contains Bubblewrap section" "pass" echo "$OUTPUT" | grep -q "Bubblewrap"
-check "output contains Display Server section" "pass" echo "$OUTPUT" | grep -q "Display Server"
-check "output contains Node.js section" "pass" echo "$OUTPUT" | grep -q "Node.js"
-check "output contains summary line" "pass" echo "$OUTPUT" | grep -q "Summary:"
+OUTPUT=$(bash "$DOCTOR" 2>&1 || true)
+check "output contains Electron section" "pass" grep -q "Electron" <<< "$OUTPUT"
+check "output contains Bubblewrap section" "pass" grep -q "Bubblewrap" <<< "$OUTPUT"
+check "output contains Display Server section" "pass" grep -q "Display Server" <<< "$OUTPUT"
+check "output contains Node.js section" "pass" grep -q "Node.js" <<< "$OUTPUT"
+check "output contains summary line" "pass" grep -q "Summary:" <<< "$OUTPUT"
 
 echo
 echo "Results: $PASS passed, $FAIL failed"
