@@ -20,6 +20,9 @@ build_package() {
     cp -r "$INSTALL_DIR/bin/"* "$ARCH_ROOT/src/staged/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications" "$ARCH_ROOT/src/staged/usr/share/"
     cp -r "$INSTALL_DIR/share/icons" "$ARCH_ROOT/src/staged/usr/share/"
+    if [ -d "$INSTALL_DIR/share/$PACKAGE_NAME" ]; then
+        cp -r "$INSTALL_DIR/share/$PACKAGE_NAME" "$ARCH_ROOT/src/staged/usr/share/"
+    fi
 
     # Generate PKGBUILD from template
     sed -e "s|@@VERSION@@|${VERSION}|g" \

@@ -114,8 +114,9 @@ check "32px icon exists" has_pattern "/usr/share/icons/hicolor/32x32/apps/claude
 # -------------------------------------------------------------------------
 # Doctor diagnostic
 # -------------------------------------------------------------------------
-echo "--- Diagnostics ---"
+echo "--- Helper Scripts ---"
 check "doctor.sh exists" has_file "/usr/share/claude-desktop-hardened/doctor.sh"
+check "focus.sh exists" has_file "/usr/share/claude-desktop-hardened/focus.sh"
 
 # -------------------------------------------------------------------------
 # DEB-specific: maintainer scripts

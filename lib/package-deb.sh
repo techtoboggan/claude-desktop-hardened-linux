@@ -25,6 +25,10 @@ build_package() {
     cp -r "$INSTALL_DIR/bin/"* "$DEB_ROOT/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications/"* "$DEB_ROOT/usr/share/applications/"
     cp -r "$INSTALL_DIR/share/icons/"* "$DEB_ROOT/usr/share/icons/"
+    if [ -d "$INSTALL_DIR/share/$PACKAGE_NAME" ]; then
+        mkdir -p "$DEB_ROOT/usr/share/$PACKAGE_NAME"
+        cp -r "$INSTALL_DIR/share/$PACKAGE_NAME/"* "$DEB_ROOT/usr/share/$PACKAGE_NAME/"
+    fi
 
     # Generate control file from template
     sed -e "s|@@VERSION@@|${VERSION}|g" \
