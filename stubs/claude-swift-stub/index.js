@@ -45,6 +45,16 @@ const ENV_ALLOWLIST = new Set([
   'SSH_AUTH_SOCK',
 ]);
 
+// Resource limits for sandboxed sessions (enforced via systemd-run)
+const RESOURCE_LIMITS = {
+  memoryMax: '4G',
+  cpuQuota: '200%',   // 2 full cores
+  tasksMax: '512',     // prevent fork bombs
+};
+
+// Maximum concurrent Cowork sessions (prevent resource exhaustion)
+const MAX_CONCURRENT_SESSIONS = 10;
+
 // Allowed binary path prefixes (prevent arbitrary command execution)
 const BINARY_PATH_ALLOWLIST = [
   '/usr/lib64/claude-desktop-hardened/',
@@ -164,10 +174,15 @@ function isPathSafe(p) {
   const normalized = path.normalize(p);
   // Block path traversal
   if (normalized.includes('..')) return false;
-  // Block access to sensitive directories
-  const sensitive = ['.ssh', '.gnupg', '.aws', '.kube'];
+  // Block access to sensitive directories and persistence vectors
+  const sensitive = [
+    '.ssh', '.gnupg', '.aws', '.kube', '.docker',
+    '.bashrc', '.bash_profile', '.profile', '.zshrc',
+    '.config/autostart', '.local/share/autostart',
+    'cron', '.pam_environment',
+  ];
   for (const dir of sensitive) {
-    if (normalized.includes(`/${dir}/`) || normalized.endsWith(`/${dir}`)) {
+    if (normalized.includes(`/${dir}/`) || normalized.endsWith(`/${dir}`) || normalized.endsWith(`/${dir}`)) {
       return false;
     }
   }
@@ -192,7 +207,20 @@ function detectBackend() {
     } catch (_) {}
   }
 
+  // bubblewrap is a hard dependency — warn loudly if missing
+  console.error('[cowork-linux] WARNING: bubblewrap not found! Cowork sessions will run unsandboxed.');
+  console.error('[cowork-linux] Install bubblewrap: sudo dnf install bubblewrap / sudo apt install bubblewrap / sudo pacman -S bubblewrap');
   return 'host';
+}
+
+/** Check if systemd-run is available for resource limiting. */
+function hasSystemdRun() {
+  try {
+    fs.accessSync('/usr/bin/systemd-run', fs.constants.X_OK);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 /** Resolve full path to bwrap binary. */
@@ -200,43 +228,99 @@ function resolveBwrap() {
   for (const p of ['/usr/bin/bwrap', '/usr/local/bin/bwrap']) {
     try { fs.accessSync(p, fs.constants.X_OK); return p; } catch (_) {}
   }
-  return 'bwrap'; // fallback to PATH
+  throw new Error('bubblewrap (bwrap) not found at /usr/bin/bwrap or /usr/local/bin/bwrap');
+}
+
+/**
+ * Conditionally add a read-only bind mount if the path exists on the host.
+ */
+function roBindIfExists(bwrapArgs, hostPath, destPath) {
+  try {
+    fs.statSync(hostPath);
+    bwrapArgs.push('--ro-bind', hostPath, destPath || hostPath);
+  } catch (_) {}
 }
 
 /**
  * Build the command and args for bubblewrap sandboxing.
+ *
+ * Uses a default-deny filesystem policy: nothing is mounted unless
+ * explicitly listed. This prevents the agent from reading browser data,
+ * password managers, other users' files, or anything outside its workspace.
  */
 function buildBwrapCommand(claudeBinary, args, workDir, env) {
+  const home = os.homedir();
   const bwrapArgs = [
-    '--ro-bind', '/', '/',              // Read-only root
-    '--dev', '/dev',
-    '--proc', '/proc',
-    '--tmpfs', '/tmp',
-    '--bind', workDir, workDir,         // Writable working directory
-    '--bind', SESSION_BASE, SESSION_BASE, // Writable sessions dir
-    // NOTE: Do NOT use --unshare-net — Claude Code needs HTTPS to reach the Anthropic API
     '--die-with-parent',
+    // NOTE: Do NOT use --unshare-net — Claude Code needs HTTPS to reach the Anthropic API
   ];
 
-  // Allow write to config dirs Claude Code needs
-  const writableDirs = [
-    path.join(os.homedir(), '.config', 'Claude'),
-    path.join(os.homedir(), '.claude'),
-    path.join(os.homedir(), '.local', 'share'),
-  ];
-  for (const dir of writableDirs) {
-    if (fs.existsSync(dir)) {
-      bwrapArgs.push('--bind', dir, dir);
+  // --- Minimal read-only rootfs (default-deny) ---
+  // System binaries and libraries
+  roBindIfExists(bwrapArgs, '/usr');
+  roBindIfExists(bwrapArgs, '/lib');
+  roBindIfExists(bwrapArgs, '/lib64');
+  // /bin and /sbin may be symlinks to /usr/bin on merged-usr distros
+  try {
+    if (fs.lstatSync('/bin').isSymbolicLink()) {
+      bwrapArgs.push('--symlink', 'usr/bin', '/bin');
+    } else {
+      roBindIfExists(bwrapArgs, '/bin');
     }
+  } catch (_) { roBindIfExists(bwrapArgs, '/bin'); }
+  try {
+    if (fs.lstatSync('/sbin').isSymbolicLink()) {
+      bwrapArgs.push('--symlink', 'usr/sbin', '/sbin');
+    } else {
+      roBindIfExists(bwrapArgs, '/sbin');
+    }
+  } catch (_) { roBindIfExists(bwrapArgs, '/sbin'); }
+
+  // Selective /etc — only what node/networking needs
+  const etcFiles = [
+    '/etc/resolv.conf', '/etc/hosts', '/etc/nsswitch.conf',
+    '/etc/passwd', '/etc/group', '/etc/localtime', '/etc/hostname',
+    '/etc/ssl', '/etc/ca-certificates', '/etc/pki',
+    '/etc/ld.so.cache', '/etc/ld.so.conf', '/etc/ld.so.conf.d',
+  ];
+  for (const f of etcFiles) {
+    roBindIfExists(bwrapArgs, f);
   }
 
-  // Block sensitive directories
-  const sensitive = ['.ssh', '.gnupg', '.aws', '.kube'];
-  for (const dir of sensitive) {
-    const fullPath = path.join(os.homedir(), dir);
-    if (fs.existsSync(fullPath)) {
-      bwrapArgs.push('--tmpfs', fullPath);
-    }
+  // Virtual filesystems
+  bwrapArgs.push('--dev', '/dev');
+  bwrapArgs.push('--proc', '/proc');
+  bwrapArgs.push('--tmpfs', '/tmp');
+
+  // Block all of /home, then allow only what's needed
+  bwrapArgs.push('--tmpfs', '/home');
+
+  // Writable: workspace and session data
+  bwrapArgs.push('--bind', workDir, workDir);
+  bwrapArgs.push('--bind', SESSION_BASE, SESSION_BASE);
+
+  // Writable: Claude-specific config dirs
+  const writableDirs = [
+    path.join(home, '.config', 'Claude'),
+    path.join(home, '.claude'),
+    path.join(home, '.local', 'share', 'claude'),
+    path.join(home, '.local', 'state', 'claude'),
+  ];
+  for (const dir of writableDirs) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      bwrapArgs.push('--bind', dir, dir);
+    } catch (_) {}
+  }
+
+  // Read-only: node/npm paths the CLI may need to resolve modules
+  const nodeReadonly = [
+    path.join(home, '.nvm'),
+    path.join(home, '.npm'),
+    path.join(home, '.node_modules'),
+  ];
+  for (const dir of nodeReadonly) {
+    roBindIfExists(bwrapArgs, dir);
   }
 
   bwrapArgs.push('--', claudeBinary, ...args);
@@ -288,6 +372,10 @@ class SwiftAddonStub {
    */
   spawn(sessionId, processName, command, args = [], cwd, env = {},
         additionalMounts, isResume, allowedDomains, sharedCwdPath, oneShot) {
+    if (this._processes.size >= MAX_CONCURRENT_SESSIONS) {
+      throw new Error(`Maximum concurrent sessions (${MAX_CONCURRENT_SESSIONS}) reached`);
+    }
+
     const claudeBinary = this._getClaudeBinary();
 
     // args comes from the app as an array of CLI arguments
@@ -318,18 +406,36 @@ class SwiftAddonStub {
     if (this._backend === 'bubblewrap') {
       const { command: bwrapCmd, args: bwrapArgs, env: bwrapEnv } =
         buildBwrapCommand(claudeBinary, translatedArgs, workDir, filteredEnv);
-      child = spawn(bwrapCmd, bwrapArgs, {
+
+      let spawnCmd, spawnArgs;
+      if (hasSystemdRun()) {
+        // Wrap with systemd-run for cgroup resource limits
+        spawnCmd = '/usr/bin/systemd-run';
+        spawnArgs = [
+          '--scope', '--user', '--quiet',
+          `--property=MemoryMax=${RESOURCE_LIMITS.memoryMax}`,
+          `--property=CPUQuota=${RESOURCE_LIMITS.cpuQuota}`,
+          `--property=TasksMax=${RESOURCE_LIMITS.tasksMax}`,
+          '--', bwrapCmd, ...bwrapArgs,
+        ];
+        console.log(`[cowork-linux] Resource limits: mem=${RESOURCE_LIMITS.memoryMax} cpu=${RESOURCE_LIMITS.cpuQuota} tasks=${RESOURCE_LIMITS.tasksMax}`);
+      } else {
+        console.warn('[cowork-linux] systemd-run not available — no resource limits applied');
+        spawnCmd = bwrapCmd;
+        spawnArgs = bwrapArgs;
+      }
+
+      child = spawn(spawnCmd, spawnArgs, {
         cwd: workDir,
         env: bwrapEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } else {
-      // Host backend — direct execution
-      child = spawn(claudeBinary, translatedArgs, {
-        cwd: workDir,
-        env: filteredEnv,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      // Host backend — refuse to run unsandboxed
+      throw new Error(
+        'bubblewrap (bwrap) is required for Cowork sessions. ' +
+        'Install it: sudo dnf install bubblewrap / sudo apt install bubblewrap / sudo pacman -S bubblewrap'
+      );
     }
 
     this._processes.set(sessionId, child);
@@ -440,6 +546,11 @@ class SwiftAddonStub {
    * Mount a host path into the session (create symlink).
    */
   mountPath(sessionId, hostPath, mountPoint) {
+    if (!isPathSafe(hostPath)) {
+      console.error(`[cowork-linux] Mount blocked: unsafe path ${hostPath}`);
+      return false;
+    }
+
     const sessionDir = path.join(SESSION_BASE, 'sessions', sessionId, 'mnt');
     const linkPath = path.join(sessionDir, path.basename(mountPoint || hostPath));
 
@@ -460,6 +571,10 @@ class SwiftAddonStub {
    */
   openFile(filePath) {
     const hostPath = translatePath(filePath);
+    if (!isPathSafe(hostPath)) {
+      console.error(`[cowork-linux] openFile blocked: unsafe path ${hostPath}`);
+      return;
+    }
     execFile('xdg-open', [hostPath], (err) => {
       if (err) console.error(`[cowork-linux] xdg-open failed: ${err.message}`);
     });
@@ -470,6 +585,10 @@ class SwiftAddonStub {
    */
   revealFile(filePath) {
     const hostPath = translatePath(filePath);
+    if (!isPathSafe(hostPath)) {
+      console.error(`[cowork-linux] revealFile blocked: unsafe path ${hostPath}`);
+      return;
+    }
     const dir = path.dirname(hostPath);
 
     // Try nautilus first, then generic xdg-open on directory
@@ -484,31 +603,30 @@ class SwiftAddonStub {
 
   /**
    * Get list of open windows (for computer use).
+   * Delegates to the Computer Use module for X11/Wayland auto-detection.
    */
   getOpenWindows() {
     try {
-      const { execFileSync } = require('child_process');
-      const output = execFileSync('wmctrl', ['-l'], { encoding: 'utf8' });
-      return output.split('\n').filter(Boolean).map(line => {
-        const parts = line.split(/\s+/);
-        return {
-          id: parts[0],
-          desktop: parts[1],
-          title: parts.slice(3).join(' '),
-        };
-      });
-    } catch (_) {
+      const { getOpenWindows } = require('../cowork/computer_use');
+      return getOpenWindows();
+    } catch (err) {
+      console.error(`[cowork-linux] getOpenWindows failed: ${err.message}`);
       return [];
     }
   }
 
   /**
-   * Capture a screenshot (placeholder — requires further implementation).
+   * Capture a screenshot via grim (Wayland) or scrot (X11).
+   * Returns base64-encoded PNG.
    */
   captureScreenshot() {
-    // TODO: Implement via grim (Wayland) or scrot/import (X11)
-    console.warn('[cowork-linux] Screenshot capture not yet implemented');
-    return null;
+    try {
+      const { captureScreenshot } = require('../cowork/computer_use');
+      return captureScreenshot();
+    } catch (err) {
+      console.error(`[cowork-linux] Screenshot failed: ${err.message}`);
+      return null;
+    }
   }
 
   /**

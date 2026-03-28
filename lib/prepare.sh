@@ -172,13 +172,16 @@ _capp.on("ready",()=>{
   setTimeout(()=>{
     const{ipcMain:_ipc}=require("electron");
     const _eipcPrefix="$eipc_message$_742e51f2-18f9-4a58-bbe9-e8a5cc4381ee_$_";
+    // Computer Use TCC stubs — delegate to permission layer for user confirmation
+    let _cuPerm;
+    try{_cuPerm=require("cowork/computer_use_permission");}catch(_){_cuPerm=null;}
     const _stubs={
-      "claude.web_$_ComputerUseTcc_$_getState":       ()=>({screenRecording:true,accessibility:true}),
-      "claude.web_$_ComputerUseTcc_$_requestAccessibility":()=>({granted:true}),
-      "claude.web_$_ComputerUseTcc_$_requestScreenRecording":()=>({granted:true}),
+      "claude.web_$_ComputerUseTcc_$_getState":       ()=>_cuPerm?_cuPerm.getState():{screenRecording:false,accessibility:false},
+      "claude.web_$_ComputerUseTcc_$_requestAccessibility":async()=>_cuPerm?await _cuPerm.requestPermission("accessibility","eipc"):{granted:false},
+      "claude.web_$_ComputerUseTcc_$_requestScreenRecording":async()=>_cuPerm?await _cuPerm.requestPermission("screenRecording","eipc"):{granted:false},
       "claude.web_$_ComputerUseTcc_$_openSystemSettings":()=>{},
-      "claude.web_$_ComputerUseTcc_$_getCurrentSessionGrants":()=>[],
-      "claude.web_$_ComputerUseTcc_$_revokeGrant":    ()=>{},
+      "claude.web_$_ComputerUseTcc_$_getCurrentSessionGrants":()=>_cuPerm?_cuPerm.getCurrentSessionGrants():[],
+      "claude.web_$_ComputerUseTcc_$_revokeGrant":    (_e,k)=>{if(_cuPerm)_cuPerm.revokeGrant(k);},
       "claude.web_$_ComputerUseTcc_$_listInstalledApps":()=>[],
     };
     for(const[suffix,handler] of Object.entries(_stubs)){
@@ -311,7 +314,7 @@ SWIFTPKG
 
     cd "$CLAUDE_CLI_DIR"
     npm init -y > /dev/null 2>&1
-    npm install "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" --save > /dev/null 2>&1
+    npm install "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" --save --ignore-scripts > /dev/null 2>&1
 
     # CLI wrapper script
     mkdir -p "$INSTALL_DIR/bin"
@@ -331,6 +334,10 @@ CLIEOF
     # -----------------------------------------------------------------------
     cp app.asar "$INSTALL_DIR/lib/$PACKAGE_NAME/"
     cp -r app.asar.unpacked "$INSTALL_DIR/lib/$PACKAGE_NAME/"
+
+    # Doctor diagnostic script
+    mkdir -p "$INSTALL_DIR/share/$PACKAGE_NAME"
+    install -m 755 "$SCRIPT_DIR/scripts/doctor.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/doctor.sh"
 
     # Desktop entry
     cat > "$INSTALL_DIR/share/applications/claude-desktop-hardened.desktop" << EOF
@@ -359,9 +366,14 @@ EOF
 # desktop entry (icon, pinning, etc.).
 export CHROME_DESKTOP="claude-desktop-hardened.desktop"
 
-# Detect Wayland
+# Detect display server for Electron and Computer Use tools
 if [ -n "\$WAYLAND_DISPLAY" ] || [ "\$XDG_SESSION_TYPE" = "wayland" ]; then
+    export CLAUDE_DISPLAY_SERVER="wayland"
     export ELECTRON_OZONE_PLATFORM_HINT="\${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
+elif [ -n "\$DISPLAY" ]; then
+    export CLAUDE_DISPLAY_SERVER="x11"
+else
+    export CLAUDE_DISPLAY_SERVER="headless"
 fi
 
 # Detect keyring provider via D-Bus for credential storage
@@ -374,6 +386,11 @@ if command -v dbus-send >/dev/null 2>&1; then
     fi
 else
     KEYRING_FLAG="--password-store=basic"
+fi
+
+# Handle --doctor flag
+if [ "\${1:-}" = "--doctor" ]; then
+    exec "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/doctor.sh"
 fi
 
 LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"

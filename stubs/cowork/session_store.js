@@ -91,7 +91,8 @@ class SessionStore {
   }
 
   _generateId() {
-    return `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const crypto = require('crypto');
+    return `session_${crypto.randomBytes(16).toString('hex')}`;
   }
 }
 

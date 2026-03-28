@@ -161,6 +161,24 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f | head -30
 
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg.tar.*" -o -name "sbom.json" \) \
+            -exec sha256sum {} \; | sort > ../SHA256SUMS
+          cd ..
+          echo "Generated checksums for $(wc -l < SHA256SUMS) files"
+          cat SHA256SUMS
+
+      - name: GPG sign checksums
+        if: env.GPG_PRIVATE_KEY != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --yes --armor --detach-sign SHA256SUMS
+          echo "Checksums signed with GPG"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
@@ -197,6 +215,7 @@ jobs:
 
             ### Supply chain security
             - SBOM (CycloneDX) attached as `sbom.json`
+            - `SHA256SUMS` with GPG signature for integrity verification
             - All CI actions pinned to commit SHAs
             - Source scanned for trojan source attacks and malware
             - nupkg SHA256 verified against pin in `CLAUDE_VERSION`
@@ -206,6 +225,8 @@ jobs:
             artifacts/**/*.pkg.tar.*
             artifacts/**/PKGBUILD
             artifacts/sbom/sbom.json
+            SHA256SUMS
+            SHA256SUMS.asc
           draft: false
           prerelease: false
 

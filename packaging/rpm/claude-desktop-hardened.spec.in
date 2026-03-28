@@ -6,8 +6,12 @@ License:        Proprietary
 AutoReqProv:    no
 URL:            https://www.anthropic.com
 BuildArch:      @@ARCHITECTURE@@
-Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils
-Recommends:     bubblewrap, gnome-keyring
+Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils, bubblewrap
+Recommends:     gnome-keyring
+# X11 Computer Use tools
+Suggests:       wmctrl, xdotool, scrot, xclip, xrandr
+# Wayland Computer Use tools
+Suggests:       grim, slurp, wl-clipboard, ydotool, wlr-randr
 Provides:       claude-desktop = %{version}-%{release}
 Conflicts:      claude-desktop
 
@@ -28,6 +32,10 @@ cp -r @@INSTALL_DIR@@/lib/%{name}/* %{buildroot}/usr/lib64/%{name}/
 cp -r @@INSTALL_DIR@@/bin/* %{buildroot}/usr/bin/
 cp -r @@INSTALL_DIR@@/share/applications/* %{buildroot}/usr/share/applications/
 cp -r @@INSTALL_DIR@@/share/icons/* %{buildroot}/usr/share/icons/
+if [ -d "@@INSTALL_DIR@@/share/%{name}" ]; then
+    mkdir -p %{buildroot}/usr/share/%{name}
+    cp -r @@INSTALL_DIR@@/share/%{name}/* %{buildroot}/usr/share/%{name}/
+fi
 
 %files
 %{_bindir}/claude-desktop-hardened
@@ -35,6 +43,7 @@ cp -r @@INSTALL_DIR@@/share/icons/* %{buildroot}/usr/share/icons/
 %{_libdir}/%{name}
 %{_datadir}/applications/claude-desktop-hardened.desktop
 %{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png
+%{_datadir}/%{name}/doctor.sh
 
 %post
 # Update icon caches

@@ -42,6 +42,12 @@ function initializeCowork() {
   // Initialize file watch manager
   fileWatchManager = new FileWatchManager();
 
+  // Log detected display server for Computer Use
+  try {
+    const { detectDisplayServer } = require('./computer_use');
+    console.log(`[cowork-linux] Display server: ${detectDisplayServer()}`);
+  } catch (_) {}
+
   initialized = true;
   console.log('[cowork-linux] Cowork initialized successfully');
 }

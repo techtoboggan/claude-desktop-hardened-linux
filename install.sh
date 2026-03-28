@@ -11,6 +11,7 @@ API="https://api.github.com/repos/${REPO}/releases/latest"
 
 info()  { echo -e "\033[1;34m::\033[0m $*"; }
 ok()    { echo -e "\033[1;32m✓\033[0m $*"; }
+warn()  { echo -e "\033[1;33m⚠\033[0m $*"; }
 err()   { echo -e "\033[1;31m✗\033[0m $*" >&2; exit 1; }
 
 # --- Detect distro family ---
@@ -53,6 +54,54 @@ fetch_release() {
     ok "Latest release: $TAG"
 }
 
+verify_download() {
+    local file="$1" filename="$2"
+    info "Verifying download integrity..."
+
+    # Download checksums from the same release
+    local checksums_url="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
+    local checksums_sig_url="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.asc"
+    local checksums_file
+    checksums_file=$(mktemp /tmp/claude-checksums-XXXXXX)
+
+    if ! curl -fsSL -o "$checksums_file" "$checksums_url" 2>/dev/null; then
+        warn "Could not download SHA256SUMS — skipping integrity check"
+        rm -f "$checksums_file"
+        return 0
+    fi
+
+    # Verify GPG signature if gpg is available and signature exists
+    if command -v gpg >/dev/null 2>&1; then
+        local sig_file
+        sig_file=$(mktemp /tmp/claude-sig-XXXXXX)
+        if curl -fsSL -o "$sig_file" "$checksums_sig_url" 2>/dev/null; then
+            if gpg --verify "$sig_file" "$checksums_file" 2>/dev/null; then
+                ok "GPG signature verified"
+            else
+                warn "GPG signature verification failed — continuing with checksum only"
+            fi
+        fi
+        rm -f "$sig_file"
+    fi
+
+    # Verify SHA256
+    if command -v sha256sum >/dev/null 2>&1; then
+        local expected actual
+        expected=$(grep "$filename" "$checksums_file" | cut -d' ' -f1)
+        actual=$(sha256sum "$file" | cut -d' ' -f1)
+        if [ -n "$expected" ] && [ "$actual" != "$expected" ]; then
+            rm -f "$checksums_file" "$file"
+            err "SHA256 mismatch! Expected: $expected Got: $actual"
+        elif [ -n "$expected" ]; then
+            ok "SHA256 verified: $actual"
+        else
+            warn "Package not found in SHA256SUMS — skipping check"
+        fi
+    fi
+
+    rm -f "$checksums_file"
+}
+
 # --- Download and install ---
 install_rpm() {
     local url
@@ -64,6 +113,7 @@ install_rpm() {
     info "Downloading RPM..."
     curl -fSL -o "$tmp" "$url" || err "Download failed"
     ok "Downloaded $(basename "$url")"
+    verify_download "$tmp" "$(basename "$url")"
 
     info "Installing (requires sudo)..."
     if command -v dnf >/dev/null 2>&1; then
@@ -88,6 +138,7 @@ install_deb() {
     info "Downloading DEB..."
     curl -fSL -o "$tmp" "$url" || err "Download failed"
     ok "Downloaded $(basename "$url")"
+    verify_download "$tmp" "$(basename "$url")"
 
     info "Installing (requires sudo)..."
     sudo dpkg -i "$tmp" || sudo apt-get install -f -y

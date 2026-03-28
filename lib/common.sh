@@ -58,7 +58,7 @@ detect_sudo_user() {
         IS_SUDO=true
         if [ -n "$SUDO_USER" ]; then
             ORIGINAL_USER="$SUDO_USER"
-            ORIGINAL_HOME=$(eval echo ~$ORIGINAL_USER)
+            ORIGINAL_HOME=$(getent passwd "$ORIGINAL_USER" | cut -d: -f6)
         else
             ORIGINAL_USER="root"
             ORIGINAL_HOME="/root"

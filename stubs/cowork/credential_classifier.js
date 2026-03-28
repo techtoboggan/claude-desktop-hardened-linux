@@ -23,6 +23,18 @@ const CREDENTIAL_PATTERNS = [
   /sk-ant-[A-Za-z0-9\-]{20,}/g,
   // OpenAI API keys
   /sk-[A-Za-z0-9]{20,}/g,
+  // Slack tokens
+  /xox[bpras]-[A-Za-z0-9\-]{10,}/g,
+  // Stripe keys
+  /[sr]k_live_[A-Za-z0-9]{20,}/g,
+  // npm tokens
+  /npm_[A-Za-z0-9]{20,}/g,
+  // PyPI tokens
+  /pypi-[A-Za-z0-9\-]{20,}/g,
+  // Google Cloud service account key IDs
+  /(?:private_key_id|client_id)\s*[":]\s*["\']?[A-Za-z0-9\-_]{20,}/gi,
+  // Database connection strings with passwords
+  /(?:mongodb|postgres|mysql|redis):\/\/[^:]+:[^@]+@/gi,
   // Generic secrets in env-style assignments
   /(?:SECRET|PASSWORD|PASSWD|TOKEN|CREDENTIAL)\s*[=:]\s*['"]?[^\s'"]{8,}['"]?/gi,
   // JWTs

@@ -6,10 +6,19 @@ pkgdesc="Claude Desktop for Linux (hardened) — bubblewrap sandboxing, credenti
 arch=('x86_64' 'aarch64')
 url="https://www.anthropic.com"
 license=('custom:Proprietary')
-depends=('nodejs' 'npm' 'electron' 'p7zip' 'icoutils' 'imagemagick' 'xdg-utils')
-optdepends=('bubblewrap: sandboxed Cowork sessions'
-            'socat: IPC support'
-            'gnome-keyring: credential storage')
+depends=('nodejs' 'npm' 'electron' 'p7zip' 'icoutils' 'imagemagick' 'xdg-utils' 'bubblewrap')
+optdepends=('socat: IPC support'
+            'gnome-keyring: credential storage'
+            'wmctrl: X11 window listing for Computer Use'
+            'xdotool: X11 input automation for Computer Use'
+            'scrot: X11 screenshot capture for Computer Use'
+            'xclip: X11 clipboard access for Computer Use'
+            'xorg-xrandr: X11 display info for Computer Use'
+            'grim: Wayland screenshot capture for Computer Use'
+            'slurp: Wayland region selection for Computer Use'
+            'wl-clipboard: Wayland clipboard access for Computer Use'
+            'ydotool: Wayland input automation for Computer Use'
+            'wlr-randr: Wayland display info for Computer Use')
 provides=('claude-desktop')
 conflicts=('claude-desktop' 'claude-desktop-bin')
 

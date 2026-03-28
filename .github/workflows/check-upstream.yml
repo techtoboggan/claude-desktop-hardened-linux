@@ -1,0 +1,120 @@
+name: Check Upstream Version
+
+on:
+  schedule:
+    - cron: '23 8 * * *'  # Daily at 08:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for new upstream version
+        id: check
+        run: |
+          CURRENT=$(head -1 CLAUDE_VERSION | tr -d '[:space:]')
+          echo "current=$CURRENT"
+
+          # Parse the Squirrel RELEASES file for available nupkg versions
+          LATEST=$(curl -sL "https://downloads.claude.ai/releases/win32/x64/RELEASES" | \
+            grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+' | \
+            sort -V | tail -1)
+
+          if [ -z "$LATEST" ]; then
+            echo "Could not determine latest version"
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "latest=$LATEST"
+
+          if [ "$LATEST" = "$CURRENT" ]; then
+            echo "Already up to date: $CURRENT"
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version available: $LATEST (current: $CURRENT)"
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+            echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for existing PR
+        if: steps.check.outputs.has_update == 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.check.outputs.latest }}"
+          BRANCH="auto/upstream-${VERSION}"
+          # Check if branch or PR already exists
+          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
+            echo "Branch $BRANCH already exists, skipping"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download and compute SHA256
+        if: steps.check.outputs.has_update == 'true' && steps.existing.outputs.exists != 'true'
+        id: sha
+        run: |
+          VERSION="${{ steps.check.outputs.latest }}"
+          URL="https://downloads.claude.ai/releases/win32/x64/AnthropicClaude-${VERSION}-full.nupkg"
+
+          echo "Downloading $URL ..."
+          HTTP_CODE=$(curl -sL -o /tmp/claude.nupkg -w "%{http_code}" "$URL")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Download failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          SHA=$(sha256sum /tmp/claude.nupkg | cut -d' ' -f1)
+          SIZE=$(stat -c%s /tmp/claude.nupkg)
+          echo "SHA256: $SHA (${SIZE} bytes)"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          rm /tmp/claude.nupkg
+
+      - name: Create version bump PR
+        if: steps.check.outputs.has_update == 'true' && steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.check.outputs.latest }}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
+          BRANCH="auto/upstream-${VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+          printf '%s\n%s\n' "$VERSION" "$SHA" > CLAUDE_VERSION
+
+          git add CLAUDE_VERSION
+          git commit -m "$(cat <<EOF
+          bump: upstream Claude Desktop ${VERSION}
+
+          Automated version bump detected by check-upstream workflow.
+          SHA256: ${SHA}
+          EOF
+          )"
+
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "bump: upstream Claude Desktop ${VERSION}" \
+            --body "$(cat <<EOF
+          Automated version bump from ${{ steps.check.outputs.current }} to ${VERSION}.
+
+          **SHA256:** \`${SHA}\`
+
+          This PR was created automatically by the upstream version monitor.
+          Review the changelog and merge when ready.
+          EOF
+          )"

@@ -181,7 +181,8 @@ class SessionOrchestrator {
     // - Forward to renderer via IPC
     // - Log to file
     if (process.env.COWORK_DEBUG) {
-      console.log(`[cowork-linux] [${sessionId}] [${stream}] ${data.slice(0, 200)}`);
+      const { redactForLogs } = require('./credential_classifier');
+      console.log(`[cowork-linux] [${sessionId}] [${stream}] ${redactForLogs(data.slice(0, 200))}`);
     }
   }
 

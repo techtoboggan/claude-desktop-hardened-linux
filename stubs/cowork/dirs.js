@@ -77,7 +77,12 @@ function isPathSafe(p) {
   const normalized = path.normalize(p);
   if (normalized.includes('..')) return false;
 
-  const blockedDirs = ['.ssh', '.gnupg', '.aws', '.kube', '.docker'];
+  const blockedDirs = [
+    '.ssh', '.gnupg', '.aws', '.kube', '.docker',
+    '.bashrc', '.bash_profile', '.profile', '.zshrc',
+    '.config/autostart', '.local/share/autostart',
+    'cron', '.pam_environment',
+  ];
   for (const dir of blockedDirs) {
     if (normalized.includes(path.sep + dir + path.sep) ||
         normalized.endsWith(path.sep + dir)) {
