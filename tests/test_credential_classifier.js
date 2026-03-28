@@ -98,6 +98,33 @@ describe('redactForLogs', () => {
     assert.equal(redactForLogs(null), null);
     assert.equal(redactForLogs(undefined), undefined);
   });
+
+  it('redacted output passes containsCredentials check', () => {
+    // The whole point of redaction: output should be safe to log
+    const dangerous = [
+      'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc',
+      'key=sk-ant-api03-abcdefghijklmnopqrst token=ghp_ABCDEFghijklmnopqrstuvwxyz0123456789',
+      'postgres://admin:hunter2@db.example.com:5432/prod',
+      'AKIAIOSFODNN7EXAMPLE found in config',
+      'npm_abcdefghijklmnopqrstuvwxyz leaked',
+      'xoxb-1234567890-abcdefghij in slack',
+    ];
+    for (const input of dangerous) {
+      const redacted = redactForLogs(input);
+      assert.ok(
+        !containsCredentials(redacted),
+        `Redacted output still contains credentials: ${redacted} (from: ${input.slice(0, 40)}...)`
+      );
+    }
+  });
+
+  it('redacts credentials in realistic log lines', () => {
+    const logLine = '[2026-03-28T12:00:00Z] ERROR: Connection to postgres://deploy:s3cretP4ss@db.prod.internal:5432/app failed after 3 retries';
+    const result = redactForLogs(logLine);
+    assert.ok(!result.includes('s3cretP4ss'));
+    assert.ok(result.includes('[2026-03-28T12:00:00Z]'));
+    assert.ok(result.includes('failed after 3 retries'));
+  });
 });
 
 describe('filterCredentialEnvVars', () => {

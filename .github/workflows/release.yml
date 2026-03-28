@@ -420,7 +420,7 @@ jobs:
 
           # Regenerate .SRCINFO
           docker run --rm -v "$(pwd):/pkg" archlinux:latest bash -c \
-            'pacman -Sy --noconfirm base-devel && cd /pkg && sudo -u nobody makepkg --printsrcinfo > .SRCINFO'
+            'pacman -Sy --noconfirm base-devel sudo && useradd -m builduser && cd /pkg && chown -R builduser: . && sudo -u builduser makepkg --printsrcinfo > .SRCINFO'
 
           # Commit and push
           git config user.name "github-actions[bot]"

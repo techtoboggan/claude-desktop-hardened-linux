@@ -157,6 +157,70 @@ else
 fi
 
 # -------------------------------------------------------------------------
+# File count sanity check
+# -------------------------------------------------------------------------
+echo "--- Sanity Checks ---"
+FILE_COUNT=$(echo "$LISTING" | grep -c "^" || true)
+check "package has substantial content (>100 files)" test "$FILE_COUNT" -gt 100
+echo "  (file count: $FILE_COUNT)"
+
+# Package size check (should be at least 10MB for a real build)
+PKG_SIZE=$(stat -c%s "$PKG" 2>/dev/null || stat -f%z "$PKG" 2>/dev/null || echo "0")
+PKG_SIZE_MB=$(( PKG_SIZE / 1048576 ))
+check "package size is reasonable (>10MB)" test "$PKG_SIZE_MB" -gt 10
+echo "  (package size: ${PKG_SIZE_MB}MB)"
+
+# -------------------------------------------------------------------------
+# Extract and validate files (permissions, asar integrity)
+# -------------------------------------------------------------------------
+echo "--- File Validation ---"
+EXTRACT_DIR=$(mktemp -d)
+trap "rm -rf '$EXTRACT_DIR'" EXIT
+
+case "$FORMAT" in
+    rpm)
+        cd "$EXTRACT_DIR" && rpm2cpio "$PKG" 2>/dev/null | cpio -idm 2>/dev/null; cd - >/dev/null
+        ;;
+    deb)
+        dpkg-deb -x "$PKG" "$EXTRACT_DIR" 2>/dev/null
+        ;;
+    arch)
+        tar -xf "$PKG" -C "$EXTRACT_DIR" 2>/dev/null
+        ;;
+esac
+
+# Check binaries are executable
+LAUNCHER="$EXTRACT_DIR/usr/bin/claude-desktop-hardened"
+CLI="$EXTRACT_DIR/usr/bin/claude"
+check "launcher is executable" test -x "$LAUNCHER"
+check "CLI wrapper is executable" test -x "$CLI"
+
+# Check launcher is a shell script (not empty/corrupt)
+if [ -f "$LAUNCHER" ]; then
+    check "launcher has shebang" head -1 "$LAUNCHER" | grep -q "^#!"
+fi
+
+# Check app.asar is a real file (not empty/truncated)
+ASAR_PATH=""
+if [ "$FORMAT" = "rpm" ]; then
+    ASAR_PATH="$EXTRACT_DIR/usr/lib64/claude-desktop-hardened/app.asar"
+else
+    ASAR_PATH="$EXTRACT_DIR/usr/lib/claude-desktop-hardened/app.asar"
+fi
+if [ -f "$ASAR_PATH" ]; then
+    ASAR_SIZE=$(stat -c%s "$ASAR_PATH" 2>/dev/null || stat -f%z "$ASAR_PATH" 2>/dev/null || echo "0")
+    check "app.asar is not empty (>1MB)" test "$ASAR_SIZE" -gt 1048576
+    echo "  (app.asar size: $(( ASAR_SIZE / 1048576 ))MB)"
+
+    # asar files start with a specific header - check first bytes
+    check "app.asar has valid header" test "$(head -c 4 "$ASAR_PATH" | od -An -tx1 | tr -d ' ')" != "00000000"
+fi
+
+# Check doctor.sh is executable
+DOCTOR="$EXTRACT_DIR/usr/share/claude-desktop-hardened/doctor.sh"
+check "doctor.sh is executable" test -x "$DOCTOR"
+
+# -------------------------------------------------------------------------
 # Summary
 # -------------------------------------------------------------------------
 echo
