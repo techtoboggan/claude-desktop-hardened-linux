@@ -31,9 +31,9 @@ build_package() {
     local MAKEPKG_CMD="makepkg -f --nodeps"
     if [ "$EUID" -eq 0 ]; then
         # Running as root (CI container) — create a temp user for makepkg
-        useradd -m _builduser 2>/dev/null || true
+        useradd -m -s /bin/bash _builduser 2>/dev/null || true
         chown -R _builduser:_builduser "$ARCH_ROOT"
-        MAKEPKG_CMD="su _builduser -c 'makepkg -f --nodeps'"
+        MAKEPKG_CMD="su _builduser -s /bin/bash -c 'makepkg -f --nodeps'"
     fi
     if eval "$MAKEPKG_CMD"; then
         local PKG_FILE

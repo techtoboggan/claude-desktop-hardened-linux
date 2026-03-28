@@ -81,6 +81,17 @@ jobs:
             echo "No SHA256 pin in CLAUDE_VERSION line 2 - skipping"
           fi
 
+      - name: Smoke test package contents
+        shell: bash
+        run: |
+          PKG=$(find build/electron-app/ -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg.tar.*" \) ! -name "*.sig" | head -1)
+          if [ -n "$PKG" ]; then
+            echo "Testing package: $PKG"
+            bash tests/test_package_contents.sh "${{ matrix.format }}" "$PKG"
+          else
+            echo "::warning::No package file found to test"
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
