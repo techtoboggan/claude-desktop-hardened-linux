@@ -11,6 +11,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 # ---------------------------------------------------------------------------
 
 read_version_pin
+read_tool_versions
 detect_sudo_user
 setup_nvm_path
 print_system_info

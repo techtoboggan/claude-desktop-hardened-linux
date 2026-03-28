@@ -10,8 +10,8 @@
 
   "depends": {
     "common": ["nodejs >= 18", "xdg-utils", "bubblewrap"],
-    "rpm": ["nodejs >= 18.0.0", "npm", "p7zip", "xdg-utils", "bubblewrap"],
-    "deb": ["nodejs (>= 18.0.0)", "npm", "p7zip-full", "xdg-utils", "bubblewrap"],
+    "rpm": ["nodejs >= 18.0.0", "nodejs < 24.0.0", "npm", "p7zip", "xdg-utils", "bubblewrap"],
+    "deb": ["nodejs (>= 18.0.0)", "nodejs (<< 24.0.0)", "npm", "p7zip-full", "xdg-utils", "bubblewrap"],
     "arch": ["nodejs", "npm", "electron", "p7zip", "icoutils", "imagemagick", "xdg-utils", "bubblewrap"]
   },
 

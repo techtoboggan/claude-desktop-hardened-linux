@@ -309,7 +309,11 @@ SWIFTPKG
     CLAUDE_CLI_DIR="$INSTALL_DIR/lib/$PACKAGE_NAME/claude-code"
     mkdir -p "$CLAUDE_CLI_DIR"
 
-    CLAUDE_CLI_VERSION=$(curl -s https://registry.npmjs.org/@anthropic-ai/claude-code/latest | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','latest'))" 2>/dev/null || echo "latest")
+    # Use pinned version from TOOL_VERSIONS, fall back to npm registry
+    if [ -z "${CLAUDE_CLI_VERSION:-}" ]; then
+        CLAUDE_CLI_VERSION=$(curl -s https://registry.npmjs.org/@anthropic-ai/claude-code/latest | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','latest'))" 2>/dev/null || echo "latest")
+        log_warn "Claude CLI version not pinned in TOOL_VERSIONS — using $CLAUDE_CLI_VERSION from registry"
+    fi
     echo "📋 Claude Code CLI version: $CLAUDE_CLI_VERSION"
 
     cd "$CLAUDE_CLI_DIR"

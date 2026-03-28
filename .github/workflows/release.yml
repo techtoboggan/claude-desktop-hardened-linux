@@ -58,7 +58,7 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora@sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
     steps:
       - name: Install git
         run: dnf install -y git
@@ -78,7 +78,7 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    container: ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
     steps:
       - name: Install git
         run: apt-get update -qq && apt-get install -y -qq git sudo
@@ -98,7 +98,7 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    container: archlinux:latest
+    container: archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f
     steps:
       - name: Install git
         run: pacman -Sy --noconfirm git
@@ -129,7 +129,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM
         run: |
-          npm install -g @cyclonedx/cdxgen@11
+          npm install -g @cyclonedx/cdxgen@11.11.0
           cdxgen -o sbom.json --spec-version 1.5 .
           echo "SBOM: $(jq '.components | length' sbom.json) components"
 
@@ -241,7 +241,7 @@ jobs:
     needs: [check-version, release]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora@sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
     steps:
       - name: Install tools
         run: dnf install -y copr-cli rpm-build rpmdevtools cpio gettext
@@ -419,7 +419,7 @@ jobs:
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 
           # Regenerate .SRCINFO
-          docker run --rm -v "$(pwd):/pkg" archlinux:latest bash -c \
+          docker run --rm -v "$(pwd):/pkg" archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f bash -c \
             'pacman -Sy --noconfirm base-devel sudo && useradd -m builduser && cd /pkg && chown -R builduser: . && sudo -u builduser makepkg --printsrcinfo > .SRCINFO'
 
           # Commit and push

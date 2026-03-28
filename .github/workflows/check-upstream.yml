@@ -64,7 +64,7 @@ jobs:
     needs: check
     if: needs.check.outputs.has_update == 'true'
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora@sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 

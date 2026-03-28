@@ -13,8 +13,8 @@ License:        Proprietary
 URL:            https://github.com/techtoboggan/claude-desktop-hardened-linux
 Source0:        claude-desktop-hardened-${VERSION}.tar.gz
 AutoReqProv:    no
-ExclusiveArch:  x86_64
-Requires:       nodejs >= 18.0.0, xdg-utils, bubblewrap
+BuildArch:      x86_64
+Requires:       nodejs >= 18.0.0, nodejs < 24.0.0, xdg-utils, bubblewrap
 Recommends:     gnome-keyring
 # X11 Computer Use tools
 Suggests:       wmctrl, xdotool, scrot, xclip, xrandr

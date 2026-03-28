@@ -61,16 +61,24 @@ jobs:
 
       - name: Install scanning tools
         run: |
-          # vet - malware detection (pinned version, check release asset naming)
+          # vet - malware detection (pinned version + SHA256 verification)
           VET_VERSION="v1.8.8"
+          VET_SHA256="87ca148769b24e17bda459d0042152eb4472e832ca433eeadaac108a8c242e52"
           VET_URL="https://github.com/safedep/vet/releases/download/${VET_VERSION}/vet_Linux_x86_64.tar.gz"
           echo "Downloading vet from ${VET_URL}..."
           curl -sfL "$VET_URL" -o /tmp/vet.tar.gz || \
             curl -sfL "https://github.com/safedep/vet/releases/download/${VET_VERSION}/vet-linux-amd64.tar.gz" -o /tmp/vet.tar.gz || \
             echo "::warning::Could not download vet, malware scan will be skipped"
           if [ -f /tmp/vet.tar.gz ]; then
-            tar xzf /tmp/vet.tar.gz -C /usr/local/bin/ 2>/dev/null || tar xzf /tmp/vet.tar.gz -C /tmp/ && cp /tmp/vet /usr/local/bin/ 2>/dev/null || true
-            chmod +x /usr/local/bin/vet 2>/dev/null || true
+            ACTUAL_SHA=$(sha256sum /tmp/vet.tar.gz | cut -d' ' -f1)
+            if [ "$ACTUAL_SHA" != "$VET_SHA256" ]; then
+              echo "::error::vet SHA256 mismatch: expected $VET_SHA256, got $ACTUAL_SHA"
+              rm /tmp/vet.tar.gz
+            else
+              echo "vet SHA256 verified: $ACTUAL_SHA"
+              tar xzf /tmp/vet.tar.gz -C /usr/local/bin/ 2>/dev/null || tar xzf /tmp/vet.tar.gz -C /tmp/ && cp /tmp/vet /usr/local/bin/ 2>/dev/null || true
+              chmod +x /usr/local/bin/vet 2>/dev/null || true
+            fi
           fi
 
           # depscan for vulnerability scanning
@@ -113,7 +121,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install cdxgen
-        run: npm install -g @cyclonedx/cdxgen@11
+        run: npm install -g @cyclonedx/cdxgen@11.11.0
 
       - name: Generate CycloneDX SBOM
         run: |

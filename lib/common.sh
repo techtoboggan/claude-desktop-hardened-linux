@@ -15,6 +15,23 @@ log_step()  { echo "$1 $2"; }
 # Version pinning
 # ---------------------------------------------------------------------------
 
+# Load pinned tool versions from TOOL_VERSIONS file.
+read_tool_versions() {
+    local tool_file="$SCRIPT_DIR/TOOL_VERSIONS"
+    if [ -f "$tool_file" ]; then
+        while IFS='=' read -r key value; do
+            # Skip comments and empty lines
+            [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+            key=$(echo "$key" | tr -d '[:space:]')
+            value=$(echo "$value" | tr -d '[:space:]')
+            export "$key=$value"
+        done < "$tool_file"
+        log_info "Loaded tool versions from TOOL_VERSIONS"
+    else
+        log_warn "TOOL_VERSIONS file not found — using defaults"
+    fi
+}
+
 # Reads CLAUDE_VERSION file and sets CLAUDE_VERSION_PINNED + CLAUDE_NUPKG_SHA256.
 # Also sets CLAUDE_DOWNLOAD_URL and DOWNLOAD_AS_NUPKG.
 read_version_pin() {

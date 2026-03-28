@@ -27,19 +27,19 @@ install_deps() {
         echo "System dependencies installed successfully"
     fi
 
-    # Install electron globally via npm if not present
+    # Install electron globally via npm if not present (pinned version)
     if ! check_command "electron"; then
-        echo "Installing electron via npm..."
-        npm install -g electron
+        echo "Installing electron@${ELECTRON_VERSION:-41.0.3} via npm..."
+        npm install -g "electron@${ELECTRON_VERSION:-41.0.3}"
         if ! check_command "electron"; then
-            log_error "Failed to install electron. Please install it manually: sudo npm install -g electron"
+            log_error "Failed to install electron. Please install it manually: sudo npm install -g electron@${ELECTRON_VERSION:-41.0.3}"
             exit 1
         fi
     fi
 
-    # Install asar if needed
+    # Install asar if needed (pinned version)
     if ! command -v asar > /dev/null 2>&1; then
-        echo "Installing asar package globally..."
-        npm install -g asar
+        echo "Installing asar@${ASAR_VERSION:-3.2.0} via npm..."
+        npm install -g "asar@${ASAR_VERSION:-3.2.0}"
     fi
 }

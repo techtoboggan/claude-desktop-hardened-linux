@@ -1,0 +1,15 @@
+# Pinned tool versions for reproducible builds.
+# Update these when upgrading dependencies.
+# Format: NAME=VERSION (one per line, comments start with #)
+
+ELECTRON_VERSION=41.0.3
+ASAR_VERSION=3.2.0
+CDXGEN_VERSION=11.11.0
+CLAUDE_CLI_VERSION=2.1.86
+VET_VERSION=v1.8.8
+VET_SHA256=87ca148769b24e17bda459d0042152eb4472e832ca433eeadaac108a8c242e52
+
+# Container image digests (updated 2026-03-28)
+FEDORA_DIGEST=sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
+UBUNTU_DIGEST=sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+ARCHLINUX_DIGEST=sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f
