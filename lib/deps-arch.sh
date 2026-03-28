@@ -3,6 +3,11 @@
 
 install_deps() {
     echo "Checking dependencies..."
+
+    # base-devel is required for makepkg (provides fakeroot, binutils, etc.)
+    echo "Installing base-devel group for makepkg..."
+    pacman -S --noconfirm --needed base-devel
+
     DEPS_TO_INSTALL=""
 
     for cmd in 7z wget wrestool icotool convert npx python3 curl; do
