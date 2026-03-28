@@ -74,8 +74,9 @@ function vmToHostPath(vmPath) {
  */
 function isPathSafe(p) {
   if (!p || typeof p !== 'string') return false;
+  // Detect traversal: if the raw input contains .., reject it
+  if (p.includes('..')) return false;
   const normalized = path.normalize(p);
-  if (normalized.includes('..')) return false;
 
   const blockedDirs = [
     '.ssh', '.gnupg', '.aws', '.kube', '.docker',
