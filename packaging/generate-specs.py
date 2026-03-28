@@ -140,7 +140,7 @@ def generate_copr_spec():
 
 Name:           {NAME}
 Version:        ${{VERSION}}
-Release:        1%{{?dist}}
+Release:        ${{RELEASE_NUM}}%{{?dist}}
 Summary:        {META['summary']}
 License:        {META['license']}
 URL:            {META['url']}

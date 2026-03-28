@@ -6,7 +6,7 @@ License:        Proprietary
 AutoReqProv:    no
 URL:            https://github.com/techtoboggan/claude-desktop-hardened-linux
 BuildArch:      @@ARCHITECTURE@@
-Requires:       nodejs >= 18.0.0, nodejs < 24.0.0, npm, p7zip, xdg-utils, bubblewrap
+Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils, bubblewrap
 Recommends:     gnome-keyring
 # X11 Computer Use tools
 Suggests:       wmctrl, xdotool, scrot, xclip, xrandr

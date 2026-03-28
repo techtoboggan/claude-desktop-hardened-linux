@@ -2,7 +2,7 @@ Package: claude-desktop-hardened
 Version: @@VERSION@@
 Architecture: @@DEB_ARCH@@
 Maintainer: Claude Desktop Linux Maintainers
-Depends: nodejs (>= 18.0.0), nodejs (<< 24.0.0), npm, p7zip-full, xdg-utils, bubblewrap
+Depends: nodejs (>= 18.0.0), npm, p7zip-full, xdg-utils, bubblewrap
 Recommends: gnome-keyring
 Suggests: wmctrl, xdotool, scrot, xclip, x11-xserver-utils,
  grim, slurp, wl-clipboard, ydotool, wlr-randr
