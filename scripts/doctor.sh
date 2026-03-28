@@ -103,7 +103,25 @@ elif [ "$DS" = "x11" ]; then
     done
 fi
 
-# 6. MCP config
+# 6. Global shortcuts portal (Wayland)
+if [ "$DS" = "wayland" ]; then
+    section "Global Shortcuts (Wayland)"
+    if command -v dbus-send >/dev/null 2>&1; then
+        if dbus-send --session --print-reply --dest=org.freedesktop.portal.Desktop \
+            /org/freedesktop/portal/desktop \
+            org.freedesktop.DBus.Properties.Get \
+            string:"org.freedesktop.portal.GlobalShortcuts" string:"version" 2>/dev/null | grep -q "uint32"; then
+            check_pass "GlobalShortcuts portal available (Ctrl+Alt+Space should work)"
+        else
+            check_warn "GlobalShortcuts portal not available"
+            echo "         Ctrl+Alt+Space won't work natively. Bind a compositor shortcut instead:"
+            echo "         Hyprland: bind = CTRL ALT, Space, exec, claude-desktop-hardened --focus"
+            echo "         Sway:    bindsym Ctrl+Alt+Space exec claude-desktop-hardened --focus"
+        fi
+    fi
+fi
+
+# MCP config
 section "MCP Configuration"
 MCP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json"
 if [ -f "$MCP_CONFIG" ]; then
