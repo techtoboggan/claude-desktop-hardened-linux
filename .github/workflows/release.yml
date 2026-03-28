@@ -351,15 +351,124 @@ jobs:
             --nowait
 
   # ---------------------------------------------------------------------------
-  # TODO: Publish APT repository to GitHub Pages (enable when GPG key is set up)
+  # Publish APT repository to GitHub Pages
   # ---------------------------------------------------------------------------
-  # publish-apt:
-  #   needs: [check-version, release]
-  #   ...
+  publish-apt:
+    needs: [check-version, release]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Download DEB from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ needs.check-version.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.deb" \
+            --dir ./incoming
+
+      - name: Update APT repository
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          # Move .deb into pool
+          mkdir -p pool/main
+          cp incoming/*.deb pool/main/
+
+          # Generate Packages index
+          mkdir -p dists/stable/main/binary-amd64
+          apt-ftparchive packages pool/main > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+
+          # Generate Release file
+          cat > dists/stable/Release <<RELEOF
+          Origin: claude-desktop-hardened
+          Label: Claude Desktop Hardened Linux
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Date: $(date -Ru)
+          Description: Security-focused Claude Desktop for Linux
+          RELEOF
+          sed -i 's/^          //' dists/stable/Release
+
+          # Add hashes to Release
+          apt-ftparchive release dists/stable >> dists/stable/Release
+
+          # GPG sign if key is available
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+            gpg --batch --yes --armor --detach-sign -o dists/stable/Release.gpg dists/stable/Release
+            gpg --batch --yes --armor --clearsign -o dists/stable/InRelease dists/stable/Release
+            # Export public key for users
+            gpg --batch --yes --armor --export > pubkey.asc
+            echo "APT repo signed with GPG"
+          else
+            echo "WARNING: No GPG key — APT repo is unsigned"
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "apt: update to ${{ needs.check-version.outputs.version }}" || echo "No changes"
+          git push origin gh-pages
 
   # ---------------------------------------------------------------------------
-  # TODO: Publish to AUR (enable when AUR SSH key is set up)
+  # Publish to AUR
   # ---------------------------------------------------------------------------
-  # publish-aur:
-  #   needs: [check-version, release]
-  #   ...
+  publish-aur:
+    needs: [check-version, release]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update AUR package
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+          TAG: ${{ needs.check-version.outputs.tag }}
+        if: env.AUR_SSH_KEY != ''
+        run: |
+          # Set up SSH for AUR
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<SSHEOF
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+          SSHEOF
+
+          # Clone AUR repo
+          git clone ssh://aur@aur.archlinux.org/claude-desktop-hardened-bin.git /tmp/aur
+          cd /tmp/aur
+
+          # Update PKGBUILD version
+          BUILDNUM=$(echo "$TAG" | grep -oP '\d+$')
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
+          sed -i "s/^_buildnum=.*/_buildnum=${BUILDNUM}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+          # Regenerate .SRCINFO
+          docker run --rm -v "$(pwd):/pkg" archlinux:latest bash -c \
+            'pacman -Sy --noconfirm base-devel && cd /pkg && sudo -u nobody makepkg --printsrcinfo > .SRCINFO'
+
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${VERSION}" || echo "No changes"
+          git push

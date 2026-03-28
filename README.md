@@ -101,6 +101,15 @@ cd claude-desktop-hardened-bin
 makepkg -si
 ```
 
+### Debian / Ubuntu (APT)
+
+```bash
+curl -fsSL https://techtoboggan.github.io/claude-desktop-hardened-linux/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/claude-desktop-hardened.gpg
+echo "deb [signed-by=/usr/share/keyrings/claude-desktop-hardened.gpg] https://techtoboggan.github.io/claude-desktop-hardened-linux stable main" | sudo tee /etc/apt/sources.list.d/claude-desktop-hardened.list
+sudo apt update
+sudo apt install claude-desktop-hardened
+```
+
 ### Quick install (any distro)
 
 ```bash
