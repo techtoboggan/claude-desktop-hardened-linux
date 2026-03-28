@@ -419,7 +419,7 @@ jobs:
           BUILDNUM=$(echo "$TAG" | grep -oP '\d+$')
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
           sed -i "s/^_buildnum=.*/_buildnum=${BUILDNUM}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=${BUILDNUM}/" PKGBUILD
 
           # Regenerate .SRCINFO (copy PKGBUILD to temp dir to avoid .git permission issues)
           docker run --rm -v "$(pwd)/PKGBUILD:/tmp/PKGBUILD:ro" archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f bash -c \
@@ -429,5 +429,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO
-          git commit -m "Update to ${VERSION}" || echo "No changes"
+          git commit -m "Update to ${VERSION}-${BUILDNUM}" || echo "No changes"
           git push
