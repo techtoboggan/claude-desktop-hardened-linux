@@ -35,7 +35,7 @@ build_package() {
         chown -R _builduser:_builduser "$ARCH_ROOT"
         MAKEPKG_CMD="su _builduser -c 'makepkg -f --nodeps'"
     fi
-    if eval "$MAKEPKG_CMD" 2>/dev/null; then
+    if eval "$MAKEPKG_CMD"; then
         local PKG_FILE
         PKG_FILE=$(ls claude-desktop-hardened-*.pkg.tar.* 2>/dev/null | head -1)
         if [ -n "$PKG_FILE" ]; then
