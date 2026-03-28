@@ -339,9 +339,10 @@ CLIEOF
     cp app.asar "$INSTALL_DIR/lib/$PACKAGE_NAME/"
     cp -r app.asar.unpacked "$INSTALL_DIR/lib/$PACKAGE_NAME/"
 
-    # Doctor diagnostic script
+    # Helper scripts
     mkdir -p "$INSTALL_DIR/share/$PACKAGE_NAME"
     install -m 755 "$SCRIPT_DIR/scripts/doctor.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/doctor.sh"
+    install -m 755 "$SCRIPT_DIR/scripts/focus.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/focus.sh"
 
     # Desktop entry
     cat > "$INSTALL_DIR/share/applications/claude-desktop-hardened.desktop" << EOF
@@ -392,10 +393,11 @@ else
     KEYRING_FLAG="--password-store=basic"
 fi
 
-# Handle --doctor flag
-if [ "\${1:-}" = "--doctor" ]; then
-    exec "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/doctor.sh"
-fi
+# Handle special flags
+case "\${1:-}" in
+    --doctor) exec "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/doctor.sh" ;;
+    --focus)  exec "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/focus.sh" ;;
+esac
 
 LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"
 
@@ -403,6 +405,7 @@ exec electron ${INSTALL_LIB_DIR}/app.asar \\
     --class=claude-desktop-hardened \\
     --name=claude-desktop-hardened \\
     --ozone-platform-hint=auto \\
+    --enable-features=GlobalShortcutsPortal \\
     --enable-logging=file \\
     --log-file="\$LOG_FILE" \\
     --log-level=INFO \\

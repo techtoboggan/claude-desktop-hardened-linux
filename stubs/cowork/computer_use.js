@@ -272,6 +272,103 @@ function getDisplayInfo() {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Window activation
+// ---------------------------------------------------------------------------
+
+/**
+ * Activate (focus/raise) a window by ID.
+ * Uses compositor-specific commands since Wayland doesn't allow apps to steal focus.
+ */
+function activateWindow(windowId) {
+  const ds = detectDisplayServer();
+
+  if (ds === 'wayland') {
+    // Hyprland
+    const hyprctl = findTool('hyprctl');
+    if (hyprctl) {
+      try {
+        execFileSync(hyprctl, ['dispatch', 'focuswindow', `address:${windowId}`]);
+        logAction('activateWindow', { windowId, method: 'hyprctl' });
+        return true;
+      } catch (_) {}
+    }
+
+    // Sway
+    const swaymsg = findTool('swaymsg');
+    if (swaymsg) {
+      try {
+        execFileSync(swaymsg, ['[con_id=' + windowId + ']', 'focus']);
+        logAction('activateWindow', { windowId, method: 'swaymsg' });
+        return true;
+      } catch (_) {}
+    }
+
+    console.warn('[cowork-linux] Cannot activate window: no supported Wayland compositor command found');
+    return false;
+  }
+
+  // X11: wmctrl
+  const wmctrl = findTool('wmctrl');
+  if (wmctrl) {
+    try {
+      execFileSync(wmctrl, ['-i', '-a', windowId]);
+      logAction('activateWindow', { windowId, method: 'wmctrl' });
+      return true;
+    } catch (_) {}
+  }
+
+  return false;
+}
+
+/**
+ * Activate the Claude Desktop window specifically.
+ * Searches by app_id / WM_CLASS.
+ */
+function activateClaudeWindow() {
+  const ds = detectDisplayServer();
+  const appId = 'claude-desktop-hardened';
+
+  if (ds === 'wayland') {
+    const hyprctl = findTool('hyprctl');
+    if (hyprctl) {
+      try {
+        // Find Claude window by class
+        const clients = JSON.parse(execFileSync(hyprctl, ['clients', '-j'], { encoding: 'utf8' }));
+        const claude = clients.find(c =>
+          (c.class || '').toLowerCase().includes('claude') ||
+          (c.initialClass || '').toLowerCase().includes('claude')
+        );
+        if (claude) {
+          execFileSync(hyprctl, ['dispatch', 'focuswindow', `address:${claude.address}`]);
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    const swaymsg = findTool('swaymsg');
+    if (swaymsg) {
+      try {
+        execFileSync(swaymsg, [`[app_id=${appId}]`, 'focus']);
+        return true;
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
+  // X11
+  const wmctrl = findTool('wmctrl');
+  if (wmctrl) {
+    try {
+      execFileSync(wmctrl, ['-x', '-a', appId]);
+      return true;
+    } catch (_) {}
+  }
+
+  return false;
+}
+
 module.exports = {
   detectDisplayServer,
   findTool,
@@ -281,4 +378,6 @@ module.exports = {
   typeText,
   scroll,
   getDisplayInfo,
+  activateWindow,
+  activateClaudeWindow,
 };

@@ -148,6 +148,25 @@ sudo apt install wmctrl xdotool scrot xclip x11-xserver-utils
 sudo pacman -S wmctrl xdotool scrot xclip xorg-xrandr
 ```
 
+### Keyboard shortcuts on Wayland
+
+Wayland does not allow applications to register global keyboard shortcuts (like Ctrl+Alt+Space) — this is a security feature of the protocol. The launcher enables the `GlobalShortcutsPortal` Electron feature flag, which works on **KDE Plasma** and **Hyprland** (users assign the key in system settings).
+
+For compositors without portal support (GNOME, Sway), bind a shortcut manually:
+
+```bash
+# Hyprland (~/.config/hypr/hyprland.conf)
+bind = CTRL ALT, Space, exec, claude-desktop-hardened --focus
+
+# Sway (~/.config/sway/config)
+bindsym Ctrl+Alt+Space exec claude-desktop-hardened --focus
+
+# i3 (~/.config/i3/config)
+bindsym Ctrl+Alt+space exec claude-desktop-hardened --focus
+```
+
+Run `claude-desktop-hardened --doctor` to check if your compositor supports the GlobalShortcuts portal.
+
 ### MCP servers
 
 Configure MCP servers in `~/.config/Claude/claude_desktop_config.json`:
