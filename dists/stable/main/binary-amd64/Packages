@@ -11,11 +11,11 @@ Suggests: wmctrl, xdotool, scrot, xclip, x11-xserver-utils,
  grim, slurp, wl-clipboard, ydotool, wlr-randr
 Conflicts: claude-desktop
 Filename: pool/main/claude-desktop-hardened_1.1.9310_amd64.deb
-Size: 28109722
-MD5sum: baec9ddb05e34e834fa02ac243bfc679
-SHA1: 6096fe11244bf709ab24ac064b6fcfa29349be52
-SHA256: fd403021695d0a071789216c37732e45e29e1dbf78cd23b926fd195de574eb02
-SHA512: 2d096a6ab779228f9290f00bee45ae0dfc12ac6a44aeaf5300e7716aca81a1447a5af63a4aad9c2eb05170c6f883605dfb18d0c54aae7f472cb618b10fed6294
+Size: 28109640
+MD5sum: 65b0a251e77b8db22c8059d88f1cf33f
+SHA1: 701aeae235853b73ae91fc1c5d5d69664ff76a2c
+SHA256: 948500fd3f04e75676da83d69226f54c52e497a7ca1153102c27428810aae610
+SHA512: f3aaa49ce53ff77644adbf34251b3fdd4e876793c59a6e87733ab54f7022b36e425bef105d71ee40f24c02081b3b67bd5228222d6f1fdc0667704049ee806162
 Homepage: https://www.anthropic.com
 Description: Claude Desktop for Linux (hardened)
  Claude is an AI assistant from Anthropic.
