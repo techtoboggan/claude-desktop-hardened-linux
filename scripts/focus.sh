@@ -43,15 +43,33 @@ if [ "$DS" = "wayland" ]; then
         swaymsg "[app_id=$APP_ID] focus" 2>/dev/null && exit 0
     fi
 
-    # KDE Plasma (via kstart or kdotool)
+    # KDE Plasma 6 (via KWin scripting — most reliable on KDE Wayland)
+    if [ "${XDG_CURRENT_DESKTOP:-}" = "KDE" ] && command -v gdbus >/dev/null 2>&1; then
+        KWIN_SCRIPT=$(mktemp /tmp/kwin-focus-XXXXXX.js)
+        cat > "$KWIN_SCRIPT" << 'KWINJS'
+const clients = workspace.stackingOrder;
+for (let i = 0; i < clients.length; i++) {
+    const c = clients[i];
+    if (c.resourceClass && c.resourceClass.toString().toLowerCase().includes('claude')) {
+        workspace.activeWindow = c;
+        break;
+    }
+}
+KWINJS
+        gdbus call --session --dest org.kde.KWin --object-path /Scripting \
+            --method org.kde.kwin.Scripting.loadScript "$KWIN_SCRIPT" 2>/dev/null
+        gdbus call --session --dest org.kde.KWin --object-path /Scripting \
+            --method org.kde.kwin.Scripting.start 2>/dev/null
+        rm -f "$KWIN_SCRIPT"
+        exit 0
+    fi
+
+    # KDE fallback via kdotool
     if command -v kdotool >/dev/null 2>&1; then
         WID=$(kdotool search --class "$APP_ID" 2>/dev/null | head -1)
         if [ -n "$WID" ]; then
             kdotool windowactivate "$WID" && exit 0
         fi
-    fi
-    if command -v kstart >/dev/null 2>&1; then
-        kstart --activate --window "$APP_ID" 2>/dev/null && exit 0
     fi
 
     # GNOME (via gdbus → gnome-shell eval)

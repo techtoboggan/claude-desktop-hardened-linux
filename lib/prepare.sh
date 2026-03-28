@@ -193,6 +193,34 @@ _capp.on("ready",()=>{
   },2000);
 });
 
+// Wayland window activation fix: BrowserWindow.show()/focus() are no-ops on
+// KDE Wayland. Override them to use KWin scripting for reliable activation.
+if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY)){
+  const _origShow=require("electron").BrowserWindow.prototype.show;
+  const _origFocus=require("electron").BrowserWindow.prototype.focus;
+  const _activateViaKWin=function(){
+    if(process.env.XDG_CURRENT_DESKTOP==="KDE"){
+      try{
+        const{execFileSync}=require("child_process");
+        const _fs=require("fs");
+        const _tmp="/tmp/kwin-claude-activate-"+process.pid+".js";
+        _fs.writeFileSync(_tmp,'const c=workspace.stackingOrder;for(let i=0;i<c.length;i++){if(c[i].resourceClass&&c[i].resourceClass.toString().toLowerCase().includes("claude")){workspace.activeWindow=c[i];break;}}');
+        execFileSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.loadScript",_tmp],{timeout:2000});
+        execFileSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.start"],{timeout:2000});
+        try{_fs.unlinkSync(_tmp);}catch(_){}
+      }catch(_){}
+    }
+  };
+  require("electron").BrowserWindow.prototype.show=function(){
+    _origShow.call(this);
+    _activateViaKWin();
+  };
+  require("electron").BrowserWindow.prototype.focus=function(){
+    _origFocus.call(this);
+    _activateViaKWin();
+  };
+}
+
 _capp.on("browser-window-created",(e,w)=>{
   if(process.platform==="linux"){
     // Hide the visual menu bar but don't touch the Menu object
