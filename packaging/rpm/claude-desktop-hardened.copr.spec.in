@@ -1,12 +1,20 @@
+# Disable build-id checks and stripping — this is a binary repackage
+%global _missing_build_ids_terminate_build 0
+%global _enable_debug_packages 0
+%global debug_package %{nil}
+%global __os_install_post %{nil}
+%global __strip /bin/true
+
 Name:           claude-desktop-hardened
-Version:        @@VERSION@@
-Release:        1
+Version:        ${VERSION}
+Release:        1%{?dist}
 Summary:        Claude Desktop for Linux (hardened)
 License:        Proprietary
-AutoReqProv:    no
 URL:            https://github.com/techtoboggan/claude-desktop-hardened-linux
-BuildArch:      @@ARCHITECTURE@@
-Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils, bubblewrap
+Source0:        claude-desktop-hardened-${VERSION}.tar.gz
+AutoReqProv:    no
+BuildArch:      x86_64
+Requires:       nodejs >= 18.0.0, xdg-utils, bubblewrap
 Recommends:     gnome-keyring
 # X11 Computer Use tools
 Suggests:       wmctrl, xdotool, scrot, xclip, xrandr
@@ -18,29 +26,12 @@ Conflicts:      claude-desktop
 %description
 Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.
 
+%prep
+%setup -c -T
+tar xzf %{SOURCE0}
+
 %install
-mkdir -p %{buildroot}/usr/lib64/%{name}
-mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/usr/share/applications
-mkdir -p %{buildroot}/usr/share/icons
-
-# Copy files from the staging area
-cp -r @@INSTALL_DIR@@/lib/%{name}/* %{buildroot}/usr/lib64/%{name}/
-cp -r @@INSTALL_DIR@@/bin/* %{buildroot}/usr/bin/
-cp -r @@INSTALL_DIR@@/share/applications/* %{buildroot}/usr/share/applications/
-cp -r @@INSTALL_DIR@@/share/icons/* %{buildroot}/usr/share/icons/
-if [ -d "@@INSTALL_DIR@@/share/%{name}" ]; then
-    mkdir -p %{buildroot}/usr/share/%{name}
-    cp -r @@INSTALL_DIR@@/share/%{name}/* %{buildroot}/usr/share/%{name}/
-fi
-
-%files
-%{_bindir}/claude-desktop-hardened
-%{_bindir}/claude
-/usr/lib64/claude-desktop-hardened/
-%{_datadir}/applications/claude-desktop-hardened.desktop
-%{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png
-%{_datadir}/claude-desktop-hardened/
+cp -a . %{buildroot}/
 
 %post
 gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor 2>/dev/null || :
@@ -56,6 +47,10 @@ done || :
 gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor 2>/dev/null || :
 update-desktop-database %{_datadir}/applications 2>/dev/null || :
 
-%changelog
-* @@DATE@@ @@MAINTAINER@@ @@VERSION@@-1
-- Package build
+%files
+%{_bindir}/claude-desktop-hardened
+%{_bindir}/claude
+/usr/lib64/claude-desktop-hardened/
+%{_datadir}/applications/claude-desktop-hardened.desktop
+%{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png
+%{_datadir}/claude-desktop-hardened/

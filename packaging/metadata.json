@@ -1,0 +1,48 @@
+{
+  "name": "claude-desktop-hardened",
+  "summary": "Claude Desktop for Linux (hardened)",
+  "description": "Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.",
+  "url": "https://github.com/techtoboggan/claude-desktop-hardened-linux",
+  "license": "Proprietary",
+  "maintainer": "Tristan <https://github.com/techtoboggan>",
+  "provides": ["claude-desktop"],
+  "conflicts": ["claude-desktop", "claude-desktop-bin"],
+
+  "depends": {
+    "common": ["nodejs >= 18", "xdg-utils", "bubblewrap"],
+    "rpm": ["nodejs >= 18.0.0", "npm", "p7zip", "xdg-utils", "bubblewrap"],
+    "deb": ["nodejs (>= 18.0.0)", "npm", "p7zip-full", "xdg-utils", "bubblewrap"],
+    "arch": ["nodejs", "npm", "electron", "p7zip", "icoutils", "imagemagick", "xdg-utils", "bubblewrap"]
+  },
+
+  "recommends": ["gnome-keyring"],
+
+  "suggests": {
+    "x11": ["wmctrl", "xdotool", "scrot", "xclip", "xrandr"],
+    "wayland": ["grim", "slurp", "wl-clipboard", "ydotool", "wlr-randr"]
+  },
+
+  "optdepends_arch": [
+    "socat: IPC support",
+    "gnome-keyring: credential storage",
+    "wmctrl: X11 window listing for Computer Use",
+    "xdotool: X11 input automation for Computer Use",
+    "scrot: X11 screenshot capture for Computer Use",
+    "xclip: X11 clipboard access for Computer Use",
+    "xorg-xrandr: X11 display info for Computer Use",
+    "grim: Wayland screenshot capture for Computer Use",
+    "slurp: Wayland region selection for Computer Use",
+    "wl-clipboard: Wayland clipboard access for Computer Use",
+    "ydotool: Wayland input automation for Computer Use",
+    "wlr-randr: Wayland display info for Computer Use"
+  ],
+
+  "files": [
+    "%{_bindir}/claude-desktop-hardened",
+    "%{_bindir}/claude",
+    "/usr/lib64/claude-desktop-hardened/",
+    "%{_datadir}/applications/claude-desktop-hardened.desktop",
+    "%{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png",
+    "%{_datadir}/claude-desktop-hardened/"
+  ]
+}

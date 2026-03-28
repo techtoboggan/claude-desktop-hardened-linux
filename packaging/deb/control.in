@@ -10,9 +10,6 @@ Provides: claude-desktop
 Conflicts: claude-desktop
 Section: utils
 Priority: optional
-Homepage: https://www.anthropic.com
+Homepage: https://github.com/techtoboggan/claude-desktop-hardened-linux
 Description: Claude Desktop for Linux (hardened)
- Claude is an AI assistant from Anthropic.
- This package provides the desktop interface for Claude with Cowork
- (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing,
- credential redaction, and bundled Claude Code CLI.
+ Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.

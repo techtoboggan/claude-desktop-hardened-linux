@@ -4,10 +4,10 @@ pkgver=@@VERSION@@
 pkgrel=1
 pkgdesc="Claude Desktop for Linux (hardened) — bubblewrap sandboxing, credential redaction"
 arch=('x86_64' 'aarch64')
-url="https://www.anthropic.com"
+url="https://github.com/techtoboggan/claude-desktop-hardened-linux"
 license=('custom:Proprietary')
 depends=('nodejs' 'npm' 'electron' 'p7zip' 'icoutils' 'imagemagick' 'xdg-utils' 'bubblewrap')
-optdepends=('socat: IPC support'
+optdepends=(            'socat: IPC support'
             'gnome-keyring: credential storage'
             'wmctrl: X11 window listing for Computer Use'
             'xdotool: X11 input automation for Computer Use'
