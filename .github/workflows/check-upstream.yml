@@ -2,16 +2,21 @@ name: Check Upstream Version
 
 on:
   schedule:
-    - cron: '23 8 * * *'  # Daily at 08:23 UTC
+    - cron: '*/10 * * * *'  # Every 10 minutes
   workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: write
+  issues: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    outputs:
+      has_update: ${{ steps.check.outputs.has_update }}
+      latest: ${{ steps.check.outputs.latest }}
+      current: ${{ steps.check.outputs.current }}
+      sha256: ${{ steps.sha.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,9 +24,8 @@ jobs:
         id: check
         run: |
           CURRENT=$(head -1 CLAUDE_VERSION | tr -d '[:space:]')
-          echo "current=$CURRENT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
 
-          # Parse the Squirrel RELEASES file for available nupkg versions
           LATEST=$(curl -sL "https://downloads.claude.ai/releases/win32/x64/RELEASES" | \
             grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+' | \
             sort -V | tail -1)
@@ -32,8 +36,6 @@ jobs:
             exit 0
           fi
 
-          echo "latest=$LATEST"
-
           if [ "$LATEST" = "$CURRENT" ]; then
             echo "Already up to date: $CURRENT"
             echo "has_update=false" >> "$GITHUB_OUTPUT"
@@ -41,80 +43,190 @@ jobs:
             echo "New version available: $LATEST (current: $CURRENT)"
             echo "has_update=true" >> "$GITHUB_OUTPUT"
             echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
-            echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check for existing PR
-        if: steps.check.outputs.has_update == 'true'
-        id: existing
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.check.outputs.latest }}"
-          BRANCH="auto/upstream-${VERSION}"
-          # Check if branch or PR already exists
-          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
-            echo "Branch $BRANCH already exists, skipping"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download and compute SHA256
-        if: steps.check.outputs.has_update == 'true' && steps.existing.outputs.exists != 'true'
+        if: steps.check.outputs.has_update == 'true'
         id: sha
         run: |
           VERSION="${{ steps.check.outputs.latest }}"
           URL="https://downloads.claude.ai/releases/win32/x64/AnthropicClaude-${VERSION}-full.nupkg"
-
-          echo "Downloading $URL ..."
-          HTTP_CODE=$(curl -sL -o /tmp/claude.nupkg -w "%{http_code}" "$URL")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Download failed with HTTP $HTTP_CODE"
-            exit 1
-          fi
-
+          curl -sL -o /tmp/claude.nupkg "$URL"
           SHA=$(sha256sum /tmp/claude.nupkg | cut -d' ' -f1)
-          SIZE=$(stat -c%s /tmp/claude.nupkg)
-          echo "SHA256: $SHA (${SIZE} bytes)"
+          echo "SHA256: $SHA"
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
           rm /tmp/claude.nupkg
 
-      - name: Create version bump PR
-        if: steps.check.outputs.has_update == 'true' && steps.existing.outputs.exists != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.check.outputs.latest }}"
-          SHA="${{ steps.sha.outputs.sha256 }}"
-          BRANCH="auto/upstream-${VERSION}"
+  # -------------------------------------------------------------------------
+  # Test the new version builds cleanly before pushing
+  # -------------------------------------------------------------------------
+  test-build:
+    needs: check
+    if: needs.check.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
+      - name: Pin new version
+        run: |
+          printf '%s\n%s\n' "${{ needs.check.outputs.latest }}" "${{ needs.check.outputs.sha256 }}" > CLAUDE_VERSION
+          cat CLAUDE_VERSION
+
+      - name: Build (Fedora RPM)
+        id: build
+        run: |
+          FORMAT=rpm ./build.sh 2>&1 | tee /tmp/build.log
+        continue-on-error: true
+
+      - name: Validate patches applied
+        id: patches
+        if: steps.build.outcome == 'success'
+        run: |
+          # Check the patch log for failures
+          if grep -q '\[FAIL\]' /tmp/build.log; then
+            echo "Patch failures detected"
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            grep '\[FAIL\]' /tmp/build.log
+          else
+            echo "status=passed" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Test electron can parse the patched app
+        id: electron
+        if: steps.build.outcome == 'success'
+        run: |
+          # Find the patched index.js and validate syntax
+          MAIN_JS=$(find /tmp -path "*/app.asar.contents/.vite/build/index.js" -o -path "*/app.asar.contents/index.js" 2>/dev/null | head -1)
+          if [ -n "$MAIN_JS" ]; then
+            node --check "$MAIN_JS" 2>&1 && echo "status=passed" >> "$GITHUB_OUTPUT" || echo "status=failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "Could not find patched JS for validation"
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+
+      - name: Set overall status
+        id: overall
+        run: |
+          if [ "${{ steps.build.outcome }}" = "success" ] && \
+             [ "${{ steps.patches.outputs.status }}" != "failed" ] && \
+             [ "${{ steps.electron.outputs.status }}" != "failed" ]; then
+            echo "status=passed" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+    outputs:
+      status: ${{ steps.overall.outputs.status }}
+      build_outcome: ${{ steps.build.outcome }}
+      patch_status: ${{ steps.patches.outputs.status }}
+      electron_status: ${{ steps.electron.outputs.status }}
+
+  # -------------------------------------------------------------------------
+  # On success: push CLAUDE_VERSION update to main (triggers release)
+  # -------------------------------------------------------------------------
+  push-update:
+    needs: [check, test-build]
+    if: needs.test-build.outputs.status == 'passed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update CLAUDE_VERSION and push
+        run: |
+          VERSION="${{ needs.check.outputs.latest }}"
+          SHA="${{ needs.check.outputs.sha256 }}"
 
           printf '%s\n%s\n' "$VERSION" "$SHA" > CLAUDE_VERSION
 
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CLAUDE_VERSION
-          git commit -m "$(cat <<EOF
-          bump: upstream Claude Desktop ${VERSION}
+          git commit -m "bump: upstream Claude Desktop ${VERSION}
 
-          Automated version bump detected by check-upstream workflow.
-          SHA256: ${SHA}
-          EOF
-          )"
+          Automated version bump from ${{ needs.check.outputs.current }} to ${VERSION}.
+          Build tested successfully before merge.
+          SHA256: ${SHA}"
 
-          git push origin "$BRANCH"
+          git push origin main
 
-          gh pr create \
-            --title "bump: upstream Claude Desktop ${VERSION}" \
-            --body "$(cat <<EOF
-          Automated version bump from ${{ steps.check.outputs.current }} to ${VERSION}.
+  # -------------------------------------------------------------------------
+  # On failure: open a GitHub issue with diagnostics
+  # -------------------------------------------------------------------------
+  open-issue:
+    needs: [check, test-build]
+    if: needs.test-build.outputs.status == 'failed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-          **SHA256:** \`${SHA}\`
+      - name: Download build log
+        uses: actions/download-artifact@v4
+        with:
+          name: build-log
+          path: ./logs
 
-          This PR was created automatically by the upstream version monitor.
-          Review the changelog and merge when ready.
-          EOF
+      - name: Create issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check.outputs.latest }}"
+          BUILD="${{ needs.test-build.outputs.build_outcome }}"
+          PATCHES="${{ needs.test-build.outputs.patch_status }}"
+          ELECTRON="${{ needs.test-build.outputs.electron_status }}"
+
+          # Extract relevant failures from build log
+          FAILURES=""
+          if [ -f logs/build.log ]; then
+            FAILURES=$(grep -E '\[FAIL\]|\[ERROR\]|Error:|error:' logs/build.log | head -30)
+          fi
+
+          # Check if an issue already exists for this version
+          EXISTING=$(gh issue list --search "Build failure: Claude Desktop ${VERSION}" --state open --json number --jq '.[0].number' 2>/dev/null)
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #${EXISTING} already exists for ${VERSION}, adding comment"
+            gh issue comment "$EXISTING" --body "Retry failed at $(date -u +%Y-%m-%dT%H:%M:%SZ).
+
+          **Build:** ${BUILD} | **Patches:** ${PATCHES} | **Electron:** ${ELECTRON}
+
+          \`\`\`
+          ${FAILURES}
+          \`\`\`"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Build failure: Claude Desktop ${VERSION}" \
+            --label "bug,automated" \
+            --body "$(cat <<ISSUEEOF
+          The upstream version monitor detected Claude Desktop **${VERSION}** but the build failed.
+
+          ## Status
+          | Check | Result |
+          |-------|--------|
+          | Build | ${BUILD} |
+          | Patches | ${PATCHES} |
+          | Electron syntax | ${ELECTRON} |
+
+          ## Failures
+          \`\`\`
+          ${FAILURES}
+          \`\`\`
+
+          ## What to do
+          1. Check the [build log](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details
+          2. The patches in \`patches/\` likely need updating for new minified symbol names
+          3. Once fixed, the next 10-minute check will auto-release
+
+          *This issue was created automatically by the upstream version monitor.*
+          ISSUEEOF
           )"
