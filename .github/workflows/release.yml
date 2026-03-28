@@ -381,6 +381,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "apt: update to ${{ needs.check-version.outputs.version }}" || echo "No changes"
+          git pull --rebase origin gh-pages || true
           git push origin gh-pages
 
   # ---------------------------------------------------------------------------
@@ -430,4 +431,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO
           git commit -m "Update to ${VERSION}-${BUILDNUM}" || echo "No changes"
+          git pull --rebase || true
           git push
