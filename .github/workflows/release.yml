@@ -418,9 +418,9 @@ jobs:
           sed -i "s/^_buildnum=.*/_buildnum=${BUILDNUM}/" PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 
-          # Regenerate .SRCINFO
-          docker run --rm -v "$(pwd):/pkg" archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f bash -c \
-            'pacman -Sy --noconfirm base-devel sudo && useradd -m builduser && cd /pkg && chown -R builduser: . && sudo -u builduser makepkg --printsrcinfo > .SRCINFO'
+          # Regenerate .SRCINFO (copy PKGBUILD to temp dir to avoid .git permission issues)
+          docker run --rm -v "$(pwd)/PKGBUILD:/tmp/PKGBUILD:ro" archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f bash -c \
+            'pacman -Sy --noconfirm base-devel sudo >/dev/null 2>&1 && useradd -m builduser && cp /tmp/PKGBUILD /home/builduser/ && chown builduser: /home/builduser/PKGBUILD && cd /home/builduser && sudo -u builduser makepkg --printsrcinfo' > .SRCINFO
 
           # Commit and push
           git config user.name "github-actions[bot]"
