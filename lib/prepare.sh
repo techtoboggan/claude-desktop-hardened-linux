@@ -116,8 +116,9 @@ SWIFTPKG
 const{app:_capp,Menu:_cMenu,nativeImage:_cNI}=require("electron");
 const _cPath=require("path");
 
-// Set desktop filename so Wayland compositors can match the window to the
-// .desktop entry (correct icon, pinning, window grouping).
+// Set app identity BEFORE app.ready — this controls the GlobalShortcuts portal
+// registration name on KDE, the Wayland app_id, and window grouping.
+_capp.name="Claude";
 _capp.setDesktopName("claude-desktop-hardened.desktop");
 
 // Load icon once; resize to 48px for in-app title bar injection.
