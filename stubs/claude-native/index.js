@@ -86,4 +86,10 @@ module.exports = {
   // Cowork-specific: feature support flags
   isCoworkSupported: () => true,
   isVMSupported: () => true,
+
+  // Window focus tracking — used by the quick-capture window to restore focus
+  // to the previously active app after submitting a prompt. No HWND equivalent
+  // on Linux; return null so callers fall back gracefully.
+  getActiveWindowHandle: () => null,
+  setForegroundWindow: () => false,
 };
