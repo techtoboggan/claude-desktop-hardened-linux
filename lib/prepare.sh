@@ -201,7 +201,7 @@ _capp.on("ready",()=>{
       try{
         const{spawn:_spawnHelper}=require("child_process");
         const{BrowserWindow:_BWHelper}=require("electron");
-        const _helperPath=_cPath.join(__dirname,"..","..","..","share","claude-desktop-hardened","portal-shortcut.py");
+        const _helperPath="/usr/share/claude-desktop-hardened/portal-shortcut.py";
         const _helper=_spawnHelper("python3",[_helperPath],{stdio:["pipe","pipe","pipe"]});
         _helper.stdout.on("data",d=>{
           const msg=d.toString().trim();
