@@ -52,11 +52,30 @@ jobs:
         id: check
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping"
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          VERSION="${{ steps.version.outputs.version }}"
+          EVENT="${{ github.event_name }}"
+
+          if [ "$EVENT" = "workflow_run" ]; then
+            # Triggered by check-upstream: only release if this version has
+            # never been released before. The build-increment logic would
+            # otherwise produce a new tag every hourly run even with no
+            # upstream version change.
+            if git tag -l "v${VERSION}-*" | grep -q .; then
+              echo "Version ${VERSION} already has a release tag — skipping (workflow_run)"
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "New upstream version ${VERSION} detected — will release"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            # push to CLAUDE_VERSION or workflow_dispatch: use build-increment
+            # so deliberate packaging-fix releases (same version, new build) work.
+            if git rev-parse "$TAG" >/dev/null 2>&1; then
+              echo "Tag $TAG already exists, skipping"
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   build-rpm:
