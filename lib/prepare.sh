@@ -121,6 +121,23 @@ const _cPath=require("path");
 _capp.name="Claude";
 _capp.setDesktopName("claude-desktop-hardened.desktop");
 
+// PRELOAD FIX: Electron 35+ enables renderer sandbox by default. Sandboxed
+// renderer subprocesses cannot read from the asar VFS, so preload scripts
+// inside the asar fail silently ("Unable to load preload script"). The build
+// process extracts preloads to a real directory alongside the asar. Here we
+// intercept path.join so that any call constructing a ".vite/build/X.js" path
+// is redirected to the real file — without touching any other path.join calls.
+if(process.platform==="linux"){
+  const _preloadDir=_cPath.join(__dirname,"..","preloads");
+  const _origJoin=_cPath.join;
+  _cPath.join=function(...args){
+    const result=_origJoin.apply(null,args);
+    const m=result.match(/\.vite[\\/]build[\\/](\w+\.js)$/);
+    if(m){const real=_origJoin(_preloadDir,m[1]);try{require("fs").accessSync(real);return real;}catch(_){}}
+    return result;
+  };
+}
+
 // Load icon once; resize to 48px for in-app title bar injection.
 const _iconPath=_cPath.join(__dirname,"..","..","resources","icon.png");
 const _iconFull=_cNI.createFromPath(_iconPath);
@@ -450,6 +467,18 @@ CLIEOF
     # -----------------------------------------------------------------------
     cp app.asar "$INSTALL_DIR/lib/$PACKAGE_NAME/"
     cp -r app.asar.unpacked "$INSTALL_DIR/lib/$PACKAGE_NAME/"
+
+    # Extract preload scripts to real filesystem so sandboxed Electron renderers
+    # (Electron 35+ enables sandbox by default) can load them. Preloads inside
+    # asars fail silently in sandboxed mode because the renderer subprocess's
+    # filesystem view does not include the asar VFS.
+    mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME/preloads"
+    for _preload in aboutWindow mainWindow mainView quickWindow findInPage computerUseTeach coworkArtifact; do
+        if [ -f "app.asar.contents/.vite/build/${_preload}.js" ]; then
+            cp "app.asar.contents/.vite/build/${_preload}.js" \
+               "$INSTALL_DIR/lib/$PACKAGE_NAME/preloads/${_preload}.js"
+        fi
+    done
 
     # Helper scripts
     mkdir -p "$INSTALL_DIR/share/$PACKAGE_NAME"
