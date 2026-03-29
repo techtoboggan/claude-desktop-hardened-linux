@@ -192,11 +192,36 @@ _capp.on("ready",()=>{
     }
     console.log("[cowork-linux] Registered ComputerUseTcc stubs");
 
-    // Global shortcuts on Wayland are handled by Electron's built-in
-    // GlobalShortcutsPortal feature (--enable-features=GlobalShortcutsPortal).
-    // The launcher wraps Electron in a systemd scope named
-    // "app-claude-desktop-hardened-<PID>.scope" so xdg-desktop-portal identifies
-    // the app correctly in KDE System Settings → Shortcuts.
+    // Wayland global shortcut: Electron's globalShortcut.register() doesn't work
+    // on Wayland. Spawn a Python helper that registers Ctrl+Alt+Space via the
+    // XDG GlobalShortcuts portal using a persistent D-Bus connection. The helper
+    // runs inside the same systemd scope as Electron (set up by the launcher),
+    // so the portal identifies it as "claude-desktop-hardened".
+    if(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY){
+      try{
+        const{spawn:_spawnHelper}=require("child_process");
+        const{BrowserWindow:_BWHelper}=require("electron");
+        const _helperPath=_cPath.join(__dirname,"..","..","..","share","claude-desktop-hardened","portal-shortcut.py");
+        const _helper=_spawnHelper("python3",[_helperPath],{stdio:["pipe","pipe","pipe"]});
+        _helper.stdout.on("data",d=>{
+          const msg=d.toString().trim();
+          if(msg==="READY")console.log("[cowork-linux] Global shortcut registered via portal");
+          if(msg==="ACTIVATED"){
+            const _wins=_BWHelper.getAllWindows();
+            if(_wins.length>0){
+              const _w=_wins[0];
+              if(_w.isVisible()&&_w.isFocused()){_w.hide();}
+              else{_w.show();_w.focus();}
+            }
+          }
+          if(msg.startsWith("PORTAL_ERROR")||msg==="UNAVAILABLE")
+            console.log("[cowork-linux] Portal shortcut unavailable:",msg,"— use claude-desktop-hardened --focus");
+        });
+        _helper.stderr.on("data",d=>console.error("[cowork-linux] portal-shortcut:",d.toString().trim()));
+        _helper.on("error",()=>{});
+        _capp.on("before-quit",()=>{try{_helper.kill();}catch(_){}});
+      }catch(ex){console.log("[cowork-linux] Portal shortcut setup failed:",ex.message);}
+    }
   },2000);
 });
 
@@ -393,6 +418,7 @@ CLIEOF
     mkdir -p "$INSTALL_DIR/share/$PACKAGE_NAME"
     install -m 755 "$SCRIPT_DIR/scripts/doctor.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/doctor.sh"
     install -m 755 "$SCRIPT_DIR/scripts/focus.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/focus.sh"
+    install -m 755 "$SCRIPT_DIR/scripts/portal-shortcut.py" "$INSTALL_DIR/share/$PACKAGE_NAME/portal-shortcut.py"
 
     # Desktop entry
     cat > "$INSTALL_DIR/share/applications/claude-desktop-hardened.desktop" << EOF
