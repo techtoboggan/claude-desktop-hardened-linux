@@ -1,5 +1,5 @@
 # Maintainer: Tristan <https://github.com/techtoboggan>
-pkgname=claude-desktop-hardened
+pkgname=claude-desktop-hardened-bin
 pkgver=@@VERSION@@
 pkgrel=1
 pkgdesc="Claude Desktop for Linux (hardened) — bubblewrap sandboxing, credential redaction"
@@ -19,8 +19,8 @@ optdepends=(            'socat: IPC support'
             'wl-clipboard: Wayland clipboard access for Computer Use'
             'ydotool: Wayland input automation for Computer Use (run: sudo systemctl enable --now ydotool)'
             'wlr-randr: Wayland display info for Computer Use')
-provides=('claude-desktop')
-conflicts=('claude-desktop' 'claude-desktop-bin')
+provides=('claude-desktop' 'claude-desktop-hardened')
+conflicts=('claude-desktop' 'claude-desktop-bin' 'claude-desktop-hardened')
 
 # This PKGBUILD operates on a pre-built staging directory.
 # Run the build pipeline first, then makepkg from the staging dir.
