@@ -49,8 +49,15 @@ X11 tools for Computer Use: xdotool, scrot, wmctrl, xclip.
 
 %package computeruse
 Summary:        Computer Use dependencies for Claude Desktop (all display servers)
-Requires:       claude-desktop-hardened-computeruse-wayland = %{version}-%{release}
-Requires:       claude-desktop-hardened-computeruse-x11 = %{version}-%{release}
+Requires:       claude-desktop-hardened = %{version}-%{release}
+Requires:       grim
+Requires:       ydotool
+Requires:       wl-clipboard
+Requires:       slurp
+Requires:       xdotool
+Requires:       scrot
+Requires:       wmctrl
+Requires:       xclip
 %description computeruse
 Meta-package: installs all Computer Use dependencies for Wayland and X11.
     sudo dnf install claude-desktop-hardened-computeruse
@@ -89,10 +96,7 @@ update-desktop-database %{_datadir}/applications 2>/dev/null || :
 %{_datadir}/claude-desktop-hardened/
 
 %files computeruse-wayland
-# Empty — deps via Requires
 
 %files computeruse-x11
-# Empty — deps via Requires
 
 %files computeruse
-# Empty — meta-package

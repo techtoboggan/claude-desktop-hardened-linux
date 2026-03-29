@@ -57,8 +57,15 @@ and xclip (clipboard).
 # ---------------------------------------------------------------------------
 %package computeruse
 Summary:        Computer Use dependencies for Claude Desktop (all display servers)
-Requires:       claude-desktop-hardened-computeruse-wayland = %{version}-%{release}
-Requires:       claude-desktop-hardened-computeruse-x11 = %{version}-%{release}
+Requires:       claude-desktop-hardened = %{version}-%{release}
+Requires:       grim
+Requires:       ydotool
+Requires:       wl-clipboard
+Requires:       slurp
+Requires:       xdotool
+Requires:       scrot
+Requires:       wmctrl
+Requires:       xclip
 
 %description computeruse
 Meta-package that installs Computer Use dependencies for both Wayland and X11.
@@ -95,13 +102,10 @@ fi
 %{_datadir}/claude-desktop-hardened/
 
 %files computeruse-wayland
-# Empty — all deps are pulled via Requires
 
 %files computeruse-x11
-# Empty — all deps are pulled via Requires
 
 %files computeruse
-# Empty — meta-package, all deps via Requires
 
 %post
 gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor 2>/dev/null || :
