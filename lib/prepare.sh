@@ -191,6 +191,37 @@ _capp.on("ready",()=>{
       try{_ipc.handle(ch,handler);}catch(_){}
     }
     console.log("[cowork-linux] Registered ComputerUseTcc stubs");
+
+    // Wayland global shortcut via XDG GlobalShortcuts portal.
+    // Must spawn from inside Electron so the process is in the named systemd
+    // scope — xdg-desktop-portal uses the scope to determine the app ID and
+    // rejects callers without one ("An app id is required").
+    // Path comes from CLAUDE_SHARE_DIR set by the launcher (no __dirname).
+    if(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY){
+      try{
+        const _shareDir=process.env.CLAUDE_SHARE_DIR||"/usr/share/claude-desktop-hardened";
+        const{spawn:_spawnHelper}=require("child_process");
+        const{BrowserWindow:_BWHelper}=require("electron");
+        const _helper=_spawnHelper("python3",[_shareDir+"/portal-shortcut.py"],{stdio:["pipe","pipe","pipe"]});
+        _helper.stdout.on("data",d=>{
+          const msg=d.toString().trim();
+          if(msg==="READY")console.log("[cowork-linux] Global shortcut registered via portal");
+          if(msg==="ACTIVATED"){
+            const _wins=_BWHelper.getAllWindows();
+            if(_wins.length>0){
+              const _w=_wins[0];
+              if(_w.isVisible()&&_w.isFocused()){_w.hide();}
+              else{_w.show();_w.focus();}
+            }
+          }
+          if(msg.startsWith("PORTAL_ERROR")||msg==="UNAVAILABLE"||msg==="PORTAL_TIMEOUT")
+            console.log("[cowork-linux] Portal shortcut unavailable:",msg,"— use claude-desktop-hardened --focus");
+        });
+        _helper.stderr.on("data",d=>console.error("[cowork-linux] portal-shortcut:",d.toString().trim()));
+        _helper.on("error",()=>{});
+        _capp.on("before-quit",()=>{try{_helper.kill();}catch(_){}});
+      }catch(ex){console.log("[cowork-linux] Portal shortcut setup failed:",ex.message);}
+    }
   },2000);
 });
 
@@ -446,22 +477,12 @@ esac
 
 LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"
 
-# Spawn the portal shortcut helper on Wayland.
-# Runs outside the asar so the path is always reliable.
-# Reads ACTIVATED from the helper and calls --focus to bring the window up.
-PORTAL_HELPER="${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/portal-shortcut.py"
-if [ "\$CLAUDE_DISPLAY_SERVER" = "wayland" ] && command -v python3 >/dev/null 2>&1 && [ -f "\$PORTAL_HELPER" ]; then
-    python3 "\$PORTAL_HELPER" | while IFS= read -r _line; do
-        case "\$_line" in
-            ACTIVATED) "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/focus.sh" ;;
-            READY)     echo "[portal-shortcut] Global shortcut registered" ;;
-            UNAVAILABLE|PORTAL_ERROR*|PORTAL_TIMEOUT)
-                       echo "[portal-shortcut] Portal unavailable: \$_line" ;;
-        esac
-    done &
-    PORTAL_PID=\$!
-    trap 'kill \$PORTAL_PID 2>/dev/null' EXIT HUP
-fi
+# Export the share dir so the injected JS can find helpers at runtime.
+# The helper must be spawned from inside Electron (which runs in a named
+# systemd scope) so that xdg-desktop-portal can identify the app ID.
+# Spawning from the shell launcher (before exec systemd-run) puts the helper
+# outside the scope and triggers "An app id is required" from the portal.
+export CLAUDE_SHARE_DIR="${INSTALL_LIB_DIR}/../share/claude-desktop-hardened"
 
 # Launch Electron inside a correctly-named systemd scope so that
 # xdg-desktop-portal identifies the app as "claude-desktop-hardened"
