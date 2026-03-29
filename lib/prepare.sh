@@ -234,37 +234,42 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
   const{execFileSync:_execSync}=require("child_process");
   const _fs=require("fs");
   const _desktop=process.env.XDG_CURRENT_DESKTOP||"";
-  const _activateWayland=function(){
+  const _activateWayland=function(caller){
+    const _tag="[win:"+caller+"]";
     try{
       if(_desktop==="KDE"){
-        // KWin scripting: ask the compositor to set active window
         const _tmp="/tmp/kwin-claude-activate-"+process.pid+".js";
         _fs.writeFileSync(_tmp,'const c=workspace.stackingOrder;for(let i=0;i<c.length;i++){if(c[i].resourceClass&&c[i].resourceClass.toString().toLowerCase().includes("claude")){workspace.activeWindow=c[i];break;}}');
         _execSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.loadScript",_tmp],{timeout:2000});
         _execSync("gdbus",["call","--session","--dest","org.kde.KWin","--object-path","/Scripting","--method","org.kde.kwin.Scripting.start"],{timeout:2000});
         try{_fs.unlinkSync(_tmp);}catch(_){}
+        console.log("[cowork-linux]",_tag,"KWin activate ok");
       }else if(_desktop.includes("Hyprland")||_fs.existsSync("/usr/bin/hyprctl")){
-        // Hyprland: find Claude window by class and focus it
         const _clients=JSON.parse(_execSync("/usr/bin/hyprctl",["clients","-j"],{encoding:"utf8",timeout:2000}));
         const _w=_clients.find(c=>(c.class||"").toLowerCase().includes("claude"));
-        if(_w)_execSync("/usr/bin/hyprctl",["dispatch","focuswindow","address:"+_w.address],{timeout:2000});
+        if(_w){_execSync("/usr/bin/hyprctl",["dispatch","focuswindow","address:"+_w.address],{timeout:2000});console.log("[cowork-linux]",_tag,"Hyprland activate ok");}
+        else console.log("[cowork-linux]",_tag,"Hyprland: no claude window found in clients");
       }else if(_fs.existsSync("/usr/bin/swaymsg")){
-        // Sway/wlroots: focus by app_id
         _execSync("/usr/bin/swaymsg",["[app_id=claude-desktop-hardened]","focus"],{timeout:2000});
+        console.log("[cowork-linux]",_tag,"Sway activate ok");
       }else if(_desktop==="GNOME"&&_fs.existsSync("/usr/bin/gdbus")){
-        // GNOME: use gnome-shell eval to activate by WM class
         _execSync("/usr/bin/gdbus",["call","--session","--dest","org.gnome.Shell","--object-path","/org/gnome/Shell","--method","org.gnome.Shell.Eval",
           'global.get_window_actors().find(a=>{let m=a.meta_window;return m&&(m.get_wm_class()||\"\").toLowerCase().includes(\"claude\")})?.meta_window.activate(global.get_current_time())'],{timeout:2000});
+        console.log("[cowork-linux]",_tag,"GNOME activate ok");
+      }else{
+        console.log("[cowork-linux]",_tag,"no compositor activation method matched, desktop="+_desktop);
       }
-    }catch(_){}
+    }catch(err){console.log("[cowork-linux]",_tag,"activate failed:",err.message);}
   };
   require("electron").BrowserWindow.prototype.show=function(){
+    console.log("[cowork-linux] [win:show] id="+this.id+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible()+" focused="+this.isFocused());
     _origShow.call(this);
-    _activateWayland();
+    _activateWayland("show:"+this.id);
   };
   require("electron").BrowserWindow.prototype.focus=function(){
+    console.log("[cowork-linux] [win:focus] id="+this.id+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible());
     _origFocus.call(this);
-    _activateWayland();
+    _activateWayland("focus:"+this.id);
   };
 }
 
@@ -275,6 +280,16 @@ _capp.on("browser-window-created",(e,w)=>{
     w.setMenuBarVisibility(false);
   }
   try{if(!_iconFull.isEmpty())w.setIcon(_iconFull);}catch(ex){}
+
+  // Lifecycle logging — traces tray→show→blur→hide cycles for debugging
+  const _wid=w.id;
+  const _wtag=()=>"[win#"+_wid+":"+JSON.stringify(w.isDestroyed()?"<destroyed>":w.getTitle())+"]";
+  w.on("show",  ()=>console.log("[cowork-linux]",_wtag(),"show  visible="+w.isVisible()+" focused="+w.isFocused()));
+  w.on("hide",  ()=>console.log("[cowork-linux]",_wtag(),"hide"));
+  w.on("focus", ()=>console.log("[cowork-linux]",_wtag(),"focus"));
+  w.on("blur",  ()=>console.log("[cowork-linux]",_wtag(),"blur  visible="+w.isVisible()));
+  w.on("close", ()=>console.log("[cowork-linux]",_wtag(),"close"));
+  w.on("closed",()=>console.log("[cowork-linux] [win#"+_wid+"] closed"));
 
   if(process.platform!=="linux"||!_iconDataUrl)return;
 
