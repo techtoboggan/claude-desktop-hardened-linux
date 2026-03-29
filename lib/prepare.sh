@@ -192,12 +192,36 @@ _capp.on("ready",()=>{
     }
     console.log("[cowork-linux] Registered ComputerUseTcc stubs");
 
-    // Wayland global shortcut: Electron's globalShortcut.register() works via
-    // the GlobalShortcutsPortal feature flag (--enable-features=GlobalShortcutsPortal)
-    // when the process runs inside a correctly-named systemd scope. The launcher
-    // handles both (systemd-run + feature flag), so the upstream app's own
-    // globalShortcut.register("Ctrl+Alt+Space") call goes through the portal
-    // and registers under "Claude (Hardened)" in system settings.
+    // Wayland global shortcut: Electron's globalShortcut module does NOT use the
+    // GlobalShortcuts portal even with --enable-features=GlobalShortcutsPortal.
+    // Spawn a Python helper that uses python-dbus to register Ctrl+Alt+Space
+    // via the portal and listen for activation signals. The helper also writes
+    // the binding to KDE's kglobalshortcutsrc for auto-assignment.
+    if(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY){
+      try{
+        const{spawn:_spawnHelper}=require("child_process");
+        const{BrowserWindow:_BWHelper}=require("electron");
+        const _helperPath=_cPath.join(__dirname,"..","..","..","share","claude-desktop-hardened","portal-shortcut.py");
+        const _helper=_spawnHelper("python3",[_helperPath],{stdio:["pipe","pipe","pipe"]});
+        _helper.stdout.on("data",d=>{
+          const msg=d.toString().trim();
+          if(msg==="READY")console.log("[cowork-linux] Global shortcut registered via portal");
+          if(msg==="ACTIVATED"){
+            const _wins=_BWHelper.getAllWindows();
+            if(_wins.length>0){
+              const _w=_wins[0];
+              if(_w.isVisible()&&_w.isFocused()){_w.hide();}
+              else{_w.show();_w.focus();}
+            }
+          }
+          if(msg.startsWith("PORTAL_ERROR")||msg==="UNAVAILABLE")
+            console.log("[cowork-linux] Portal shortcut unavailable:",msg,"— use claude-desktop-hardened --focus");
+        });
+        _helper.stderr.on("data",d=>console.error("[cowork-linux] portal-shortcut:",d.toString().trim()));
+        _helper.on("error",()=>{});
+        _capp.on("before-quit",()=>{try{_helper.kill();}catch(_){}});
+      }catch(ex){console.log("[cowork-linux] Portal shortcut setup failed:",ex.message);}
+    }
   },2000);
 });
 

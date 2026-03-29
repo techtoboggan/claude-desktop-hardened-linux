@@ -81,6 +81,29 @@ def main():
         print(f"BIND_ERROR: {e}", flush=True)
         sys.exit(1)
 
+    # KDE workaround: the portal's preferred_trigger is treated as a suggestion,
+    # not an assignment. Write the binding directly to kglobalshortcutsrc so
+    # Ctrl+Alt+Space is auto-assigned on first registration.
+    trigger_gtk = preferred_trigger.replace("<ctrl>", "Ctrl+").replace("<alt>", "Alt+").replace("<shift>", "Shift+").replace("space", "Space")
+    kde_config = os.path.expanduser("~/.config/kglobalshortcutsrc")
+    try:
+        import configparser
+        config = configparser.ConfigParser(interpolation=None)
+        config.optionxform = str  # preserve case
+        config.read(kde_config)
+        section = "claude-desktop-hardened"
+        if not config.has_section(section):
+            config.add_section(section)
+        current = config.get(section, shortcut_id, fallback="")
+        # Only set if not already assigned (don't override user customizations)
+        if not current or current.startswith(",") or current.startswith("none,"):
+            config.set(section, shortcut_id, f"{trigger_gtk},{trigger_gtk},Claude Quick Entry")
+            config.set(section, "_k_friendly_name", "Claude (Hardened)")
+            with open(kde_config, "w") as f:
+                config.write(f, space_around_delimiters=False)
+    except Exception:
+        pass  # Non-KDE or config not writable
+
     print("READY", flush=True)
 
     # Step 3: Listen for Activated signal
