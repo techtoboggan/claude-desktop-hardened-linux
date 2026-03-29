@@ -90,8 +90,8 @@ def main():
             loop.quit()
             return
 
-        # Write to KDE config for auto-assignment
-        write_kde_shortcut(shortcut_id, preferred_trigger)
+        # Assign the actual keybinding via kglobalaccel D-Bus
+        assign_kde_shortcut(bus, shortcut_id, preferred_trigger)
 
         print("READY", flush=True)
 
@@ -137,58 +137,45 @@ def main():
     loop.run()
 
 
-def write_kde_shortcut(shortcut_id, trigger):
-    """Write shortcut binding to KDE's kglobalshortcutsrc for auto-assignment."""
-    trigger_kde = (
-        trigger
-        .replace("<ctrl>", "Ctrl+")
-        .replace("<alt>", "Alt+")
-        .replace("<shift>", "Shift+")
-        .replace("<super>", "Meta+")
-        .replace("space", "Space")
-    )
-    kde_config = os.path.expanduser("~/.config/kglobalshortcutsrc")
-    if not os.path.exists(kde_config):
+def assign_kde_shortcut(bus, shortcut_id, trigger):
+    """Assign shortcut key via kglobalaccel D-Bus (the authoritative source on KDE)."""
+    # Convert XDG trigger format to Qt key code
+    # Qt: Ctrl=0x04000000, Alt=0x08000000, Shift=0x02000000, Meta=0x10000000
+    qt_mods = 0
+    key_name = trigger
+    for mod, qt_val in [("<ctrl>", 0x04000000), ("<alt>", 0x08000000),
+                        ("<shift>", 0x02000000), ("<super>", 0x10000000)]:
+        if mod in key_name:
+            qt_mods |= qt_val
+            key_name = key_name.replace(mod, "")
+
+    # Map key name to Qt key code
+    qt_keys = {"space": 0x20, "return": 0x01000004, "escape": 0x01000000,
+               "tab": 0x01000001, "backspace": 0x01000003}
+    qt_key = qt_keys.get(key_name.lower(), ord(key_name.upper()) if len(key_name) == 1 else 0)
+    qt_code = qt_mods | qt_key
+
+    if qt_code == 0:
         return
 
     try:
-        # Read, modify, write — preserving existing content exactly
-        lines = open(kde_config).readlines()
-        section = "claude-desktop-hardened"
-        section_header = f"[{section}]\n"
+        kga = bus.get_object("org.kde.kglobalaccel", "/kglobalaccel")
+        iface = dbus.Interface(kga, "org.kde.KGlobalAccel")
 
-        # Find or create the section
-        section_idx = None
-        for i, line in enumerate(lines):
-            if line.strip() == f"[{section}]":
-                section_idx = i
-                break
+        action_id = dbus.Array([
+            dbus.String("claude-desktop-hardened"),
+            dbus.String(shortcut_id),
+            dbus.String("Claude (Hardened)"),
+            dbus.String("Claude Quick Entry"),
+        ], signature="s")
 
-        if section_idx is not None:
-            # Section exists — find the shortcut key line
-            key_found = False
-            for i in range(section_idx + 1, len(lines)):
-                if lines[i].startswith("["):
-                    break  # next section
-                if lines[i].startswith(f"{shortcut_id}="):
-                    current = lines[i].strip().split("=", 1)[1]
-                    # Only update if not already assigned
-                    if current.startswith(",") or current.startswith("none,"):
-                        lines[i] = f"{shortcut_id}={trigger_kde},{trigger_kde},Claude Quick Entry\n"
-                    key_found = True
-                    break
-            if not key_found:
-                # Add the key after the section header
-                lines.insert(section_idx + 1, f"{shortcut_id}={trigger_kde},{trigger_kde},Claude Quick Entry\n")
-        else:
-            # Add new section at the end
-            lines.append(f"\n[{section}]\n")
-            lines.append(f"_k_friendly_name=Claude (Hardened)\n")
-            lines.append(f"{shortcut_id}={trigger_kde},{trigger_kde},Claude Quick Entry\n")
+        # Register the action
+        iface.doRegister(action_id)
 
-        open(kde_config, "w").writelines(lines)
+        # Assign the key
+        iface.setForeignShortcut(action_id, dbus.Array([dbus.Int32(qt_code)], signature="i"))
     except Exception:
-        pass
+        pass  # Not on KDE, or kglobalaccel not available
 
 
 if __name__ == "__main__":
