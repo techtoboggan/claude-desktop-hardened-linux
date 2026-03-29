@@ -180,7 +180,7 @@ jobs:
       - name: Smoke test package contents
         shell: bash
         run: |
-          PKG=$(find build/electron-app/ -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg.tar.*" \) ! -name "*.sig" | head -1)
+          PKG=$(find build/electron-app/ -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg.tar.*" \) ! -name "*.sig" ! -name "*-computeruse*" | head -1)
           if [ -n "$PKG" ]; then
             echo "Testing package: $PKG"
             bash tests/test_package_contents.sh "${{ matrix.format }}" "$PKG"
