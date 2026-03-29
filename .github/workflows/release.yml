@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'CLAUDE_VERSION'
+  workflow_run:
+    workflows: ["Check Upstream Version"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,6 +19,7 @@ permissions:
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
