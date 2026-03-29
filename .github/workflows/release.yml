@@ -319,6 +319,13 @@ jobs:
           cp claude-desktop-hardened.spec ~/rpmbuild/SPECS/
           rpmbuild -bs ~/rpmbuild/SPECS/claude-desktop-hardened.spec
 
+      - name: Regenerate COPR repos before build
+        run: |
+          # Regenerate repo metadata to recover from any previously failed builds
+          # that left the repo in a broken state (COPR waits for base repo before
+          # starting new builds, so stale metadata causes the next build to time out).
+          copr-cli regenerate-repos claude-desktop-hardened || true
+
       - name: Upload SRPM to COPR
         run: |
           SRPM=$(find ~/rpmbuild/SRPMS/ -name '*.src.rpm' | head -1)
