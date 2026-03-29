@@ -262,9 +262,13 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
     }catch(err){console.log("[cowork-linux]",_tag,"activate failed:",err.message);}
   };
   require("electron").BrowserWindow.prototype.show=function(){
-    console.log("[cowork-linux] [win:show] id="+this.id+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible()+" focused="+this.isFocused());
+    const _sid=this.id;
+    console.log("[cowork-linux] [win:show] id="+_sid+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible()+" focused="+this.isFocused());
     _origShow.call(this);
-    _activateWayland("show:"+this.id);
+    // Delay activation: give the compositor time to map the surface before
+    // requesting focus. Without this, the activation request races the
+    // surface-map and KWin may not find the window yet.
+    setTimeout(()=>{ _activateWayland("show:"+_sid); },80);
   };
   require("electron").BrowserWindow.prototype.focus=function(){
     console.log("[cowork-linux] [win:focus] id="+this.id+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible());
@@ -290,6 +294,24 @@ _capp.on("browser-window-created",(e,w)=>{
   w.on("blur",  ()=>console.log("[cowork-linux]",_wtag(),"blur  visible="+w.isVisible()));
   w.on("close", ()=>console.log("[cowork-linux]",_wtag(),"close"));
   w.on("closed",()=>console.log("[cowork-linux] [win#"+_wid+"] closed"));
+
+  // Wayland focus-stealing prevention causes frameless/transparent windows (like
+  // the quick-capture window) to receive a spurious blur immediately after show(),
+  // which triggers the app's blur→hide handler before the compositor can grant focus.
+  // Suppress blur emissions for 300ms after each show() call, which is enough time
+  // for the KWin activation script to complete and the focus event to arrive.
+  if(process.env.XDG_SESSION_TYPE==="wayland"||process.env.WAYLAND_DISPLAY){
+    let _suppressBlurUntil=0;
+    w.on("show",()=>{ _suppressBlurUntil=Date.now()+300; });
+    const _origEmit=w.emit.bind(w);
+    w.emit=function(event,...args){
+      if(event==="blur"&&Date.now()<_suppressBlurUntil){
+        console.log("[cowork-linux]",_wtag(),"blur suppressed (within 300ms of show)");
+        return false;
+      }
+      return _origEmit(event,...args);
+    };
+  }
 
   if(process.platform!=="linux"||!_iconDataUrl)return;
 
@@ -486,8 +508,8 @@ fi
 
 # Handle special flags
 case "\${1:-}" in
-    --doctor) exec "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/doctor.sh" ;;
-    --focus)  exec "${INSTALL_LIB_DIR}/../share/claude-desktop-hardened/focus.sh" ;;
+    --doctor) exec "${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened/doctor.sh" ;;
+    --focus)  exec "${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened/focus.sh" ;;
 esac
 
 LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"
@@ -497,7 +519,7 @@ LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"
 # systemd scope) so that xdg-desktop-portal can identify the app ID.
 # Spawning from the shell launcher (before exec systemd-run) puts the helper
 # outside the scope and triggers "An app id is required" from the portal.
-export CLAUDE_SHARE_DIR="${INSTALL_LIB_DIR}/../share/claude-desktop-hardened"
+export CLAUDE_SHARE_DIR="${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened"
 
 # Launch Electron inside a correctly-named systemd scope so that
 # xdg-desktop-portal identifies the app as "claude-desktop-hardened"
