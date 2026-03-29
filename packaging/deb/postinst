@@ -29,3 +29,11 @@ for SANDBOX_PATH in "${SANDBOX_PATHS[@]}"; do
         break
     fi
 done
+
+echo ""
+echo "Claude Desktop Hardened installed."
+echo "To enable Computer Use, install the optional tools:"
+echo "  Wayland: sudo apt install grim ydotool wl-tools slurp"
+echo "           sudo systemctl enable --now ydotool"
+echo "  X11:     sudo apt install xdotool scrot wmctrl xclip"
+echo "Run 'claude-desktop-hardened --doctor' to check your setup."

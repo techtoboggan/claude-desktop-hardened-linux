@@ -17,7 +17,7 @@ optdepends=(            'socat: IPC support'
             'grim: Wayland screenshot capture for Computer Use'
             'slurp: Wayland region selection for Computer Use'
             'wl-clipboard: Wayland clipboard access for Computer Use'
-            'ydotool: Wayland input automation for Computer Use'
+            'ydotool: Wayland input automation for Computer Use (run: sudo systemctl enable --now ydotool)'
             'wlr-randr: Wayland display info for Computer Use')
 provides=('claude-desktop')
 conflicts=('claude-desktop' 'claude-desktop-bin')
