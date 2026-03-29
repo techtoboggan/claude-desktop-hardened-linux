@@ -440,11 +440,11 @@ jobs:
           git clone ssh://aur@aur.archlinux.org/claude-desktop-hardened-bin.git /tmp/aur
           cd /tmp/aur
 
-          # Update PKGBUILD version
+          # Build PKGBUILD from our template (source of truth) so that content
+          # changes — optdepends, descriptions, etc. — propagate automatically.
           BUILDNUM=$(echo "$TAG" | grep -oP '\d+$')
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
-          sed -i "s/^_buildnum=.*/_buildnum=${BUILDNUM}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=${BUILDNUM}/" PKGBUILD
+          sed "s/@@VERSION@@/${VERSION}/g; s/^pkgrel=.*/pkgrel=${BUILDNUM}/" \
+            "$GITHUB_WORKSPACE/packaging/arch/PKGBUILD.in" > PKGBUILD
 
           # Regenerate .SRCINFO (copy PKGBUILD to temp dir to avoid .git permission issues)
           docker run --rm -v "$(pwd)/PKGBUILD:/tmp/PKGBUILD:ro" archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f bash -c \
