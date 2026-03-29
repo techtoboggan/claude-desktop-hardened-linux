@@ -26,6 +26,35 @@ Conflicts:      claude-desktop
 %description
 Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.
 
+%package computeruse-wayland
+Summary:        Computer Use dependencies for Claude Desktop (Wayland)
+Requires:       claude-desktop-hardened = %{version}-%{release}
+Requires:       grim
+Requires:       ydotool
+Requires:       wl-clipboard
+Requires:       slurp
+%description computeruse-wayland
+Wayland tools for Computer Use: grim, ydotool, wl-clipboard, slurp.
+After installing: sudo systemctl enable --now ydotool
+
+%package computeruse-x11
+Summary:        Computer Use dependencies for Claude Desktop (X11)
+Requires:       claude-desktop-hardened = %{version}-%{release}
+Requires:       xdotool
+Requires:       scrot
+Requires:       wmctrl
+Requires:       xclip
+%description computeruse-x11
+X11 tools for Computer Use: xdotool, scrot, wmctrl, xclip.
+
+%package computeruse
+Summary:        Computer Use dependencies for Claude Desktop (all display servers)
+Requires:       claude-desktop-hardened-computeruse-wayland = %{version}-%{release}
+Requires:       claude-desktop-hardened-computeruse-x11 = %{version}-%{release}
+%description computeruse
+Meta-package: installs all Computer Use dependencies for Wayland and X11.
+    sudo dnf install claude-desktop-hardened-computeruse
+
 %prep
 %setup -c -T
 tar xzf %{SOURCE0}
@@ -42,6 +71,10 @@ for p in /usr/lib64/claude-desktop-hardened/app.asar.unpacked/node_modules/elect
          "$(dirname "$(command -v electron 2>/dev/null)")/../lib/node_modules/electron/dist/chrome-sandbox"; do
   if [ -f "$p" ]; then chown root:root "$p" && chmod 4755 "$p"; break; fi
 done || :
+echo ""
+echo "Claude Desktop Hardened installed."
+echo "To enable Computer Use: sudo dnf install claude-desktop-hardened-computeruse"
+echo "Run 'claude-desktop-hardened --doctor' to check your setup."
 
 %postun
 gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor 2>/dev/null || :
@@ -54,3 +87,12 @@ update-desktop-database %{_datadir}/applications 2>/dev/null || :
 %{_datadir}/applications/claude-desktop-hardened.desktop
 %{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png
 %{_datadir}/claude-desktop-hardened/
+
+%files computeruse-wayland
+# Empty — deps via Requires
+
+%files computeruse-x11
+# Empty — deps via Requires
+
+%files computeruse
+# Empty — meta-package

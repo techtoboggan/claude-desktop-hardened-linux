@@ -10,7 +10,27 @@ FAIL=0
 check_pass() { printf '  \033[32m✓\033[0m %s\n' "$*"; ((PASS++)) || true; }
 check_warn() { printf '  \033[33m⚠\033[0m %s\n' "$*"; ((WARN++)) || true; }
 check_fail() { printf '  \033[31m✗\033[0m %s\n' "$*"; ((FAIL++)) || true; }
+check_hint() { printf '    \033[2m→ %s\033[0m\n' "$*"; }
 section()    { printf '\n\033[1m[ %s ]\033[0m\n' "$*"; }
+
+# Detect package manager for install hints
+detect_pkg_manager() {
+    if command -v dnf >/dev/null 2>&1;    then echo "dnf"
+    elif command -v apt >/dev/null 2>&1;  then echo "apt"
+    elif command -v pacman >/dev/null 2>&1; then echo "pacman"
+    else echo "unknown"; fi
+}
+PKG_MANAGER=$(detect_pkg_manager)
+
+install_hint() {
+    # install_hint <dnf-pkg> <apt-pkg> <pacman-pkg>
+    local pkg_dnf="$1" pkg_apt="$2" pkg_pac="$3"
+    case "$PKG_MANAGER" in
+        dnf)    check_hint "sudo dnf install $pkg_dnf" ;;
+        apt)    check_hint "sudo apt install $pkg_apt" ;;
+        pacman) check_hint "sudo pacman -S $pkg_pac" ;;
+    esac
+}
 
 echo "Claude Desktop Hardened — System Diagnostic"
 echo "============================================"
@@ -85,22 +105,67 @@ fi
 
 # 5. Display-server-specific tools
 section "Computer Use Tools ($DS)"
+CU_MISSING=()
 if [ "$DS" = "wayland" ]; then
-    for tool in grim slurp wl-copy ydotool wlr-randr; do
+    _cu_tools=(
+        "grim:screenshots:grim:grim:grim"
+        "ydotool:mouse/keyboard input:ydotool:ydotool:ydotool"
+        "wl-copy:clipboard:wl-clipboard:wl-tools:wl-clipboard"
+        "slurp:region selection:slurp:slurp:slurp"
+        "wlr-randr:display info:wlr-randr:wlr-randr:wlr-randr"
+    )
+    for entry in "${_cu_tools[@]}"; do
+        IFS=: read -r tool purpose pkg_dnf pkg_apt pkg_pac <<< "$entry"
         if command -v "$tool" >/dev/null 2>&1; then
-            check_pass "$tool"
+            check_pass "$tool ($purpose)"
         else
-            check_warn "$tool not found (optional, needed for Computer Use)"
+            check_warn "$tool not found — needed for $purpose in Computer Use"
+            install_hint "$pkg_dnf" "$pkg_apt" "$pkg_pac"
+            CU_MISSING+=("$tool")
         fi
     done
+
+    # ydotool requires its daemon (ydotoold) — silent failure without it
+    if command -v ydotool >/dev/null 2>&1; then
+        if systemctl is-active --quiet ydotool.service 2>/dev/null || \
+           systemctl --user is-active --quiet ydotool.service 2>/dev/null; then
+            check_pass "ydotoold daemon running"
+        else
+            check_fail "ydotoold daemon not running — input automation will silently fail"
+            check_hint "sudo systemctl enable --now ydotool"
+            CU_MISSING+=("ydotoold")
+        fi
+    fi
+
 elif [ "$DS" = "x11" ]; then
-    for tool in wmctrl xdotool scrot xclip xrandr; do
+    _cu_tools=(
+        "xdotool:mouse/keyboard input:xdotool:xdotool:xdotool"
+        "scrot:screenshots:scrot:scrot:scrot"
+        "wmctrl:window listing:wmctrl:wmctrl:wmctrl"
+        "xclip:clipboard:xclip:xclip:xclip"
+        "xrandr:display info:xrandr:x11-xserver-utils:xorg-xrandr"
+    )
+    for entry in "${_cu_tools[@]}"; do
+        IFS=: read -r tool purpose pkg_dnf pkg_apt pkg_pac <<< "$entry"
         if command -v "$tool" >/dev/null 2>&1; then
-            check_pass "$tool"
+            check_pass "$tool ($purpose)"
         else
-            check_warn "$tool not found (optional, needed for Computer Use)"
+            check_warn "$tool not found — needed for $purpose in Computer Use"
+            install_hint "$pkg_dnf" "$pkg_apt" "$pkg_pac"
+            CU_MISSING+=("$tool")
         fi
     done
+fi
+
+if [ ${#CU_MISSING[@]} -gt 0 ]; then
+    echo
+    if [ "$DS" = "wayland" ]; then
+        check_hint "Install all at once: sudo dnf install claude-desktop-hardened-computeruse"
+        check_hint "  (or: sudo dnf install grim ydotool wl-clipboard slurp wlr-randr && sudo systemctl enable --now ydotool)"
+    elif [ "$DS" = "x11" ]; then
+        check_hint "Install all at once: sudo dnf install claude-desktop-hardened-computeruse"
+        check_hint "  (or: sudo dnf install xdotool scrot wmctrl xclip xrandr)"
+    fi
 fi
 
 # 6. Global shortcuts portal (Wayland)
