@@ -125,13 +125,31 @@ _capp.setDesktopName("claude-desktop-hardened.desktop");
 // renderer subprocesses cannot read from the asar VFS, so preload scripts
 // inside the asar fail silently ("Unable to load preload script"). The build
 // process extracts preloads to a real .vite/build/ directory alongside the
-// asar. Override app.getAppPath() to return the directory containing the asar
-// file so that path.join(app.getAppPath(), ".vite/build/X.js") resolves to
-// a real filesystem path. This works for both Node's require("path") and the
-// Vite-bundled copy of path used by the app's own BrowserWindow creation code.
+// asar. We intercept BrowserWindow construction to redirect preload paths
+// from the asar VFS to the real filesystem copies, without touching
+// getAppPath() (which the app uses for resource/config resolution).
 if(process.platform==="linux"){
-  const _origGetAppPath=_capp.getAppPath.bind(_capp);
-  _capp.getAppPath=function(){return _cPath.dirname(_origGetAppPath());};
+  const _asarPath=_capp.getAppPath();
+  const _appDir=_cPath.dirname(_asarPath);
+  const _origBW=require("electron").BrowserWindow;
+  const _fs=require("fs");
+  const _BWProxy=new Proxy(_origBW,{
+    construct(target,args,newTarget){
+      const opts=args[0]||{};
+      if(opts.webPreferences&&opts.webPreferences.preload){
+        const p=opts.webPreferences.preload;
+        if(p.includes(_asarPath)){
+          const rel=p.substring(_asarPath.length);
+          const real=_cPath.join(_appDir,rel);
+          try{_fs.accessSync(real);opts.webPreferences.preload=real;
+            console.log("[cowork-linux] preload redirected:",_cPath.basename(real));
+          }catch(_){}
+        }
+      }
+      return Reflect.construct(target,args,newTarget);
+    }
+  });
+  require("electron").BrowserWindow=_BWProxy;
 }
 
 // Load icon once; resize to 48px for in-app title bar injection.
