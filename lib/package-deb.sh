@@ -20,8 +20,8 @@ build_package() {
     mkdir -p "$DEB_ROOT/usr/share/applications"
     mkdir -p "$DEB_ROOT/usr/share/icons"
 
-    # Copy staged files (prepare.sh put them under $PKG_ROOT/usr/)
-    cp -r "$INSTALL_DIR/lib/$PACKAGE_NAME/"* "$DEB_ROOT/usr/lib/claude-desktop-hardened/"
+    # Copy staged files (use /. to include dotfiles like .vite/)
+    cp -a "$INSTALL_DIR/lib/$PACKAGE_NAME/." "$DEB_ROOT/usr/lib/claude-desktop-hardened/"
     cp -r "$INSTALL_DIR/bin/"* "$DEB_ROOT/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications/"* "$DEB_ROOT/usr/share/applications/"
     cp -r "$INSTALL_DIR/share/icons/"* "$DEB_ROOT/usr/share/icons/"

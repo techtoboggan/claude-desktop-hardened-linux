@@ -15,8 +15,8 @@ build_package() {
     mkdir -p "$ARCH_ROOT/src/staged/usr/bin"
     mkdir -p "$ARCH_ROOT/src/staged/usr/share"
 
-    # Copy staged files
-    cp -r "$INSTALL_DIR/lib/$PACKAGE_NAME/"* "$ARCH_ROOT/src/staged/usr/lib/claude-desktop-hardened/"
+    # Copy staged files (use /. to include dotfiles like .vite/)
+    cp -a "$INSTALL_DIR/lib/$PACKAGE_NAME/." "$ARCH_ROOT/src/staged/usr/lib/claude-desktop-hardened/"
     cp -r "$INSTALL_DIR/bin/"* "$ARCH_ROOT/src/staged/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications" "$ARCH_ROOT/src/staged/usr/share/"
     cp -r "$INSTALL_DIR/share/icons" "$ARCH_ROOT/src/staged/usr/share/"

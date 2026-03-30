@@ -83,8 +83,8 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/share/applications
 mkdir -p %{buildroot}/usr/share/icons
 
-# Copy files from the staging area
-cp -r @@INSTALL_DIR@@/lib/%{name}/* %{buildroot}/usr/lib64/%{name}/
+# Copy files from the staging area (use /. to include dotfiles like .vite/)
+cp -a @@INSTALL_DIR@@/lib/%{name}/. %{buildroot}/usr/lib64/%{name}/
 cp -r @@INSTALL_DIR@@/bin/* %{buildroot}/usr/bin/
 cp -r @@INSTALL_DIR@@/share/applications/* %{buildroot}/usr/share/applications/
 cp -r @@INSTALL_DIR@@/share/icons/* %{buildroot}/usr/share/icons/
