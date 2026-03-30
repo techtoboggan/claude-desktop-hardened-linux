@@ -390,9 +390,14 @@ class SwiftAddonStub {
     // Filter environment
     const filteredEnv = filterEnv(env || {});
 
+    // Bypass system OpenSSL config that may enforce FIPS restrictions
+    // (common on Fedora/RHEL) which prevent the Node.js CLI from starting.
+    // The CLI itself handles its own TLS — it doesn't need the system FIPS policy.
+    filteredEnv.OPENSSL_CONF = '/dev/null';
+
     // Translate VM paths in environment values
     for (const [key, value] of Object.entries(filteredEnv)) {
-      if (typeof value === 'string') {
+      if (typeof value === 'string' && key !== 'OPENSSL_CONF') {
         filteredEnv[key] = translatePath(value);
       }
     }
