@@ -121,16 +121,13 @@ const _cPath=require("path");
 _capp.name="Claude";
 _capp.setDesktopName("claude-desktop-hardened.desktop");
 
-// PRELOAD FIX: Electron 35+ enables renderer sandbox by default. Sandboxed
-// renderer subprocesses cannot read from the asar VFS, so preload scripts
-// inside the asar fail silently ("Unable to load preload script").
-// We disable the renderer sandbox so preloads load directly from the asar VFS.
-// This is safe because bubblewrap provides OS-level process sandboxing that
-// is more robust than the Chromium renderer sandbox for this use case.
-if(process.platform==="linux"){
-  _capp.commandLine.appendSwitch("no-sandbox");
-  console.log("[cowork-linux] Renderer sandbox disabled (bubblewrap provides OS-level sandboxing)");
-}
+// PRELOAD FIX: Electron 35+ sandboxed renderers cannot read from the asar VFS.
+// Preload scripts inside the asar fail during execution because the eipc origin
+// validator rejects calls from file:// origins. The preloads are extracted to
+// real filesystem at .vite/build/ alongside the asar. We intercept BrowserWindow
+// creation via Module._load to redirect preload paths to the real copies.
+// NOTE: require("electron").BrowserWindow is read-only, so we MUST intercept
+// via the Module._load Proxy, not by direct assignment.
 
 // Load icon once; resize to 48px for in-app title bar injection.
 const _iconPath=_cPath.join(__dirname,"..","..","resources","icon.png");
@@ -138,23 +135,38 @@ const _iconFull=_cNI.createFromPath(_iconPath);
 const _iconSmall=_iconFull.isEmpty()?_iconFull:_iconFull.resize({width:48,height:48});
 const _iconDataUrl=_iconSmall.isEmpty()?null:_iconSmall.toDataURL();
 
-// TRAY FIX: Electron on Linux has a bug where Tray.destroy() doesn't properly
-// clean up D-Bus exported methods (StatusNotifierItem). When the app recreates
-// the tray (e.g. on theme change via nativeTheme "updated" event), the new tray
-// fails to re-export its D-Bus interface, resulting in an unresponsive
-// StatusNotifierItem (Show App / Quit do nothing on KDE Wayland).
-// Fix: intercept require('electron') via Module._load to return a Proxy that
-// makes Tray a singleton — destroy() becomes a no-op, new Tray() returns the
-// existing instance with updated icon. Context menu / event handlers are
-// re-attached by the app's own code after construction.
+// MODULE._LOAD PROXY: intercept require('electron') to fix Tray singleton
+// and redirect BrowserWindow preload paths from asar VFS to real filesystem.
 if(process.platform==="linux"){
   const _Module=require("module");
   const _origLoad=_Module._load;
   let _singletonTray=null;
+  // Preload redirect: asar path → real filesystem copy
+  const _asarPath=_capp.getAppPath();
+  const _appDir=_cPath.dirname(_asarPath);
+  const _fs=require("fs");
+  const _OrigBW=require("electron").BrowserWindow;
+  const _BWProxy=new Proxy(_OrigBW,{
+    construct(target,args){
+      const opts=args[0]||{};
+      if(opts.webPreferences&&opts.webPreferences.preload){
+        const p=opts.webPreferences.preload;
+        if(p.startsWith(_asarPath+"/")){
+          const rel=p.slice(_asarPath.length);
+          const real=_cPath.join(_appDir,rel);
+          try{_fs.accessSync(real);opts.webPreferences.preload=real;
+            console.log("[cowork-linux] preload redirected:",_cPath.basename(real));
+          }catch(_){}
+        }
+      }
+      return Reflect.construct(target,args,target);
+    }
+  });
   _Module._load=function(request,parent,isMain){
     const result=_origLoad.call(this,request,parent,isMain);
     if(request==="electron"&&result&&typeof result==="object"){
       return new Proxy(result,{get(target,prop){
+        if(prop==="BrowserWindow") return _BWProxy;
         if(prop==="Tray"){
           const OrigTray=target.Tray;
           return function TrayProxy(icon){
