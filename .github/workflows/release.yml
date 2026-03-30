@@ -436,7 +436,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null || true
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=no"
 
           # Clone AUR repo
