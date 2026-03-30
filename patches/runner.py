@@ -82,7 +82,7 @@ def run(asar_dir):
 
     # Patch mainWindow.js preload: wrap getInitialLocale() in try-catch so
     # the preload survives the initial file:// page load before claude.ai loads.
-    _patch_mainwindow_preload(asar_dir)
+    _patch_preload_locale(asar_dir)
 
     print(f'[cowork-patcher] Done! {success_count}/{total_patches} patches applied')
 
@@ -93,38 +93,51 @@ def run(asar_dir):
     return 0
 
 
-def _patch_mainwindow_preload(asar_dir):
-    """Wrap getInitialLocale() in try-catch in mainWindow.js preload.
+def _patch_preload_locale(asar_dir):
+    """Wrap getInitialLocale() in try-catch in ALL preload scripts.
 
     The eipc origin validator only accepts https://claude.ai origins. During
     preload execution the frame URL is still file:// (initial HTML), so the
     getInitialLocale() sendSync call throws, killing the preload before
     window.process is exposed. We default to empty messages + 'en-US'.
+
+    Affected preloads: mainWindow.js, quickWindow.js, aboutWindow.js,
+    findInPage.js, mainView.js — all share the same eipc locale pattern.
     """
     import re as _re
-    preload_path = os.path.join(asar_dir, '.vite', 'build', 'mainWindow.js')
-    if not os.path.exists(preload_path):
-        print('  [warn] mainWindow.js preload not found — skipping locale patch')
+    import glob as _glob
+
+    build_dir = os.path.join(asar_dir, '.vite', 'build')
+    if not os.path.isdir(build_dir):
+        print('  [warn] .vite/build/ not found — skipping locale patches')
         return
 
-    with open(preload_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+    patched = 0
+    for preload_path in sorted(_glob.glob(os.path.join(build_dir, '*.js'))):
+        basename = os.path.basename(preload_path)
+        with open(preload_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-    m = _re.search(
-        r'const\{messages:(\w+),locale:(\w+)\}=(\w+)\.getInitialLocale\(\)',
-        content
-    )
-    if not m:
-        print('  [warn] mainWindow.js: getInitialLocale() pattern not found — skipping')
-        return
+        m = _re.search(
+            r'const\{messages:(\w+),locale:(\w+)\}=(\w+)\.getInitialLocale\(\)',
+            content
+        )
+        if not m:
+            continue
 
-    v1, v2, iface = m.group(1), m.group(2), m.group(3)
-    old = m.group(0)
-    new = (f'let {v1}=[],{v2}="en-US";'
-           f'try{{const _r={iface}.getInitialLocale();{v1}=_r.messages;{v2}=_r.locale;}}catch(_e){{}}')
-    content = content.replace(old, new, 1)
+        v1, v2, iface = m.group(1), m.group(2), m.group(3)
+        old = m.group(0)
+        new = (f'let {v1}=[],{v2}="en-US";'
+               f'try{{const _r={iface}.getInitialLocale();{v1}=_r.messages;{v2}=_r.locale;}}catch(_e){{}}')
+        content = content.replace(old, new, 1)
 
-    with open(preload_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+        with open(preload_path, 'w', encoding='utf-8') as f:
+            f.write(content)
 
-    print('  [ok] mainWindow.js: getInitialLocale() wrapped in try-catch')
+        patched += 1
+        print(f'  [ok] {basename}: getInitialLocale() wrapped in try-catch')
+
+    if patched == 0:
+        print('  [warn] No preloads found with getInitialLocale() pattern')
+    else:
+        print(f'  [ok] Patched {patched} preload(s)')
