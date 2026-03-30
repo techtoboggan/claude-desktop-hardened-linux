@@ -437,13 +437,7 @@ jobs:
           printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          mkdir -p ~/.ssh/ctrl
-          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n  ControlMaster auto\n  ControlPath ~/.ssh/ctrl/%%r@%%h:%%p\n  ControlPersist 120\n' >> ~/.ssh/config
-
-          # Verify auth and pre-establish the ControlMaster socket before docker
-          # touches iptables (docker network setup disrupts new SSH connections).
-          echo "Testing AUR SSH auth..."
-          ssh -T aur@aur.archlinux.org 2>&1 || true
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=no"
 
           # Clone AUR repo
           git clone ssh://aur@aur.archlinux.org/claude-desktop-hardened-bin.git /tmp/aur
