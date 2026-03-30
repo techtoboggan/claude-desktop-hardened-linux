@@ -351,6 +351,8 @@ _capp.on("browser-window-created",(e,w)=>{
   if(process.platform!=="linux"||!_iconDataUrl)return;
 
   // CSS: fixed draggable icon wrapper top-left, 42x44px matching titleBarOverlay height.
+  // Also mark all interactive elements as no-drag so the titleBarOverlay drag region
+  // doesn't swallow click events on buttons/tabs (e.g. the Chat/Cowork/Code toggle).
   const _css=[
     "#_cld_icon{",
       "position:fixed;top:0;left:0;",
@@ -365,6 +367,9 @@ _capp.on("browser-window-created",(e,w)=>{
       "pointer-events:none;-webkit-app-region:no-drag;",
       "object-fit:contain;",
       "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
+    "}",
+    "button,[role=button],[role=tab],a,input,select,textarea{",
+      "-webkit-app-region:no-drag;",
     "}",
   ].join("");
 
