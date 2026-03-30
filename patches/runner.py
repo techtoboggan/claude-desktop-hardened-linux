@@ -12,10 +12,12 @@ from . import patch_enterprise_config
 from . import patch_api_headers
 from . import patch_binary_manager
 from . import patch_binary_resolution
+from . import patch_preload_paths
 from . import inject_cowork_init
 
 PATCHES = [
     ("Platform gating functions", patch_platform_gating),
+    ("Preload script paths (asar→real filesystem)", patch_preload_paths),
     ("VM image manifest", patch_vm_manifest),
     ("Platform constants", patch_platform_constants),
     ("Enterprise config", patch_enterprise_config),
@@ -78,6 +80,10 @@ def run(asar_dir):
 
     create_package_json_entry(asar_dir)
 
+    # Patch mainWindow.js preload: wrap getInitialLocale() in try-catch so
+    # the preload survives the initial file:// page load before claude.ai loads.
+    _patch_mainwindow_preload(asar_dir)
+
     print(f'[cowork-patcher] Done! {success_count}/{total_patches} patches applied')
 
     if success_count < 3:
@@ -85,3 +91,40 @@ def run(asar_dir):
         return 1
 
     return 0
+
+
+def _patch_mainwindow_preload(asar_dir):
+    """Wrap getInitialLocale() in try-catch in mainWindow.js preload.
+
+    The eipc origin validator only accepts https://claude.ai origins. During
+    preload execution the frame URL is still file:// (initial HTML), so the
+    getInitialLocale() sendSync call throws, killing the preload before
+    window.process is exposed. We default to empty messages + 'en-US'.
+    """
+    import re as _re
+    preload_path = os.path.join(asar_dir, '.vite', 'build', 'mainWindow.js')
+    if not os.path.exists(preload_path):
+        print('  [warn] mainWindow.js preload not found — skipping locale patch')
+        return
+
+    with open(preload_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    m = _re.search(
+        r'const\{messages:(\w+),locale:(\w+)\}=(\w+)\.getInitialLocale\(\)',
+        content
+    )
+    if not m:
+        print('  [warn] mainWindow.js: getInitialLocale() pattern not found — skipping')
+        return
+
+    v1, v2, iface = m.group(1), m.group(2), m.group(3)
+    old = m.group(0)
+    new = (f'let {v1}=[],{v2}="en-US";'
+           f'try{{const _r={iface}.getInitialLocale();{v1}=_r.messages;{v2}=_r.locale;}}catch(_e){{}}')
+    content = content.replace(old, new, 1)
+
+    with open(preload_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    print('  [ok] mainWindow.js: getInitialLocale() wrapped in try-catch')
