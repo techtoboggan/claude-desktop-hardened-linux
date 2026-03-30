@@ -145,28 +145,40 @@ if(process.platform==="linux"){
   const _asarPath=_capp.getAppPath();
   const _appDir=_cPath.dirname(_asarPath);
   const _fs=require("fs");
-  const _OrigBW=require("electron").BrowserWindow;
+  // Helper: redirect preload inside opts if it points inside the asar
+  const _redirectPreload=function(opts){
+    if(opts&&opts.webPreferences&&opts.webPreferences.preload){
+      const p=opts.webPreferences.preload;
+      if(p.startsWith(_asarPath+"/")){
+        const rel=p.slice(_asarPath.length);
+        const real=_cPath.join(_appDir,rel);
+        try{_fs.accessSync(real);opts.webPreferences.preload=real;
+          console.log("[cowork-linux] preload redirected:",_cPath.basename(real));
+        }catch(_){}
+      }
+    }
+  };
+  const _electron=require("electron");
+  const _OrigBW=_electron.BrowserWindow;
   const _BWProxy=new Proxy(_OrigBW,{
     construct(target,args){
-      const opts=args[0]||{};
-      if(opts.webPreferences&&opts.webPreferences.preload){
-        const p=opts.webPreferences.preload;
-        if(p.startsWith(_asarPath+"/")){
-          const rel=p.slice(_asarPath.length);
-          const real=_cPath.join(_appDir,rel);
-          try{_fs.accessSync(real);opts.webPreferences.preload=real;
-            console.log("[cowork-linux] preload redirected:",_cPath.basename(real));
-          }catch(_){}
-        }
-      }
+      _redirectPreload(args[0]||{});
       return Reflect.construct(target,args,target);
     }
   });
+  const _OrigWCV=_electron.WebContentsView;
+  const _WCVProxy=_OrigWCV?new Proxy(_OrigWCV,{
+    construct(target,args){
+      _redirectPreload(args[0]||{});
+      return Reflect.construct(target,args,target);
+    }
+  }):null;
   _Module._load=function(request,parent,isMain){
     const result=_origLoad.call(this,request,parent,isMain);
     if(request==="electron"&&result&&typeof result==="object"){
       return new Proxy(result,{get(target,prop){
         if(prop==="BrowserWindow") return _BWProxy;
+        if(prop==="WebContentsView"&&_WCVProxy) return _WCVProxy;
         if(prop==="Tray"){
           const OrigTray=target.Tray;
           return function TrayProxy(icon){
@@ -485,6 +497,31 @@ CLIEOF
                "$INSTALL_DIR/lib/$PACKAGE_NAME/.vite/build/${_preload}.js"
         fi
     done
+
+    # Patch mainWindow.js preload: wrap getInitialLocale() in try-catch so the
+    # preload survives the initial file:// page load. The eipc origin validator
+    # only accepts https://claude.ai, rejecting file:// and crashing the preload
+    # before window.process / window.initialLocale are exposed.
+    _mw="$INSTALL_DIR/lib/$PACKAGE_NAME/.vite/build/mainWindow.js"
+    if [ -f "$_mw" ]; then
+        python3 - "$_mw" << 'PYEOF'
+import sys, re
+path = sys.argv[1]
+content = open(path).read()
+# Match: const{messages:VAR1,locale:VAR2}=IFACE.getInitialLocale();
+m = re.search(r'const\{messages:(\w+),locale:(\w+)\}=(\w+)\.getInitialLocale\(\)', content)
+if m:
+    v1, v2, iface = m.group(1), m.group(2), m.group(3)
+    old = m.group(0)
+    new = (f'let {v1}=[],{v2}="en-US";'
+           f'try{{const _r={iface}.getInitialLocale();{v1}=_r.messages;{v2}=_r.locale;}}catch(_e){{}}')
+    content = content.replace(old, new, 1)
+    open(path, 'w').write(content)
+    print('  [ok] Patched mainWindow.js: getInitialLocale() wrapped in try-catch')
+else:
+    print('  [warn] mainWindow.js: getInitialLocale() pattern not found — skipping')
+PYEOF
+    fi
 
     # Helper scripts
     mkdir -p "$INSTALL_DIR/share/$PACKAGE_NAME"
