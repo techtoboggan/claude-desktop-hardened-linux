@@ -123,33 +123,13 @@ _capp.setDesktopName("claude-desktop-hardened.desktop");
 
 // PRELOAD FIX: Electron 35+ enables renderer sandbox by default. Sandboxed
 // renderer subprocesses cannot read from the asar VFS, so preload scripts
-// inside the asar fail silently ("Unable to load preload script"). The build
-// process extracts preloads to a real .vite/build/ directory alongside the
-// asar. We intercept BrowserWindow construction to redirect preload paths
-// from the asar VFS to the real filesystem copies, without touching
-// getAppPath() (which the app uses for resource/config resolution).
+// inside the asar fail silently ("Unable to load preload script").
+// We disable the renderer sandbox so preloads load directly from the asar VFS.
+// This is safe because bubblewrap provides OS-level process sandboxing that
+// is more robust than the Chromium renderer sandbox for this use case.
 if(process.platform==="linux"){
-  const _asarPath=_capp.getAppPath();
-  const _appDir=_cPath.dirname(_asarPath);
-  const _origBW=require("electron").BrowserWindow;
-  const _fs=require("fs");
-  const _BWProxy=new Proxy(_origBW,{
-    construct(target,args,newTarget){
-      const opts=args[0]||{};
-      if(opts.webPreferences&&opts.webPreferences.preload){
-        const p=opts.webPreferences.preload;
-        if(p.includes(_asarPath)){
-          const rel=p.substring(_asarPath.length);
-          const real=_cPath.join(_appDir,rel);
-          try{_fs.accessSync(real);opts.webPreferences.preload=real;
-            console.log("[cowork-linux] preload redirected:",_cPath.basename(real));
-          }catch(_){}
-        }
-      }
-      return Reflect.construct(target,args,newTarget);
-    }
-  });
-  require("electron").BrowserWindow=_BWProxy;
+  _capp.commandLine.appendSwitch("no-sandbox");
+  console.log("[cowork-linux] Renderer sandbox disabled (bubblewrap provides OS-level sandboxing)");
 }
 
 // Load icon once; resize to 48px for in-app title bar injection.
