@@ -437,13 +437,7 @@ jobs:
           printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          # Write SSH config without leading whitespace (heredoc indentation issue)
-          cat > /tmp/aur_ssh_config <<'SSHEOF'
-Host aur.archlinux.org
-  IdentityFile ~/.ssh/aur
-  User aur
-SSHEOF
-          cat /tmp/aur_ssh_config >> ~/.ssh/config
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
 
           # Verify the key is authorised before attempting anything
           echo "Testing AUR SSH auth..."
