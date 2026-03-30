@@ -437,9 +437,11 @@ jobs:
           printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n' >> ~/.ssh/config
+          mkdir -p ~/.ssh/ctrl
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur\n  User aur\n  ControlMaster auto\n  ControlPath ~/.ssh/ctrl/%%r@%%h:%%p\n  ControlPersist 120\n' >> ~/.ssh/config
 
-          # Verify the key is authorised before attempting anything
+          # Verify auth and pre-establish the ControlMaster socket before docker
+          # touches iptables (docker network setup disrupts new SSH connections).
           echo "Testing AUR SSH auth..."
           ssh -T aur@aur.archlinux.org 2>&1 || true
 
