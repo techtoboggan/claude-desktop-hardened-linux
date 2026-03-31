@@ -58,7 +58,29 @@ def apply(content):
         content = content[:match.start()] + replacement + content[match.end():]
         total_patched += 1
 
-    # Pattern 3: detectedProjects macOS-only bail-out
+    # Pattern 3: computerUse darwin-only gate (ternary returning unsupported for non-darwin)
+    #   function X(){return process.platform==="darwin"?{status:"supported"}:{status:"unsupported",...}}
+    pattern3cu = (
+        r'function\s+([\w$]+)\s*\(\)\s*\{return process\.platform==="darwin"\?'
+        r'\{status:"supported"\}:\{status:"unsupported",'
+        r'reason:"Computer use is not available on this platform",'
+        r'unsupportedCode:"unsupported_platform"\}\}'
+    )
+
+    for match in reversed(list(re.finditer(pattern3cu, content))):
+        func_name = match.group(1)
+        print(f'  [found] computerUse platform gate: {func_name}()')
+        replacement = (
+            f'function {func_name}()'
+            '{return(process.platform==="darwin"||process.platform==="linux")'
+            '?{status:"supported"}:{status:"unsupported",'
+            'reason:"Computer use is not available on this platform",'
+            'unsupportedCode:"unsupported_platform"}}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        total_patched += 1
+
+    # Pattern 4: detectedProjects macOS-only bail-out
     #   if(process.platform!=="darwin")return ...,[]; → also allow linux
     pattern3 = r'if\(process\.platform!=="darwin"\)return [^,]+,\[\]'
 

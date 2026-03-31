@@ -826,6 +826,133 @@ const moduleExport = {
     captureScreenshot: stubInstance.captureScreenshot.bind(stubInstance),
     getOpenDocuments() { return []; },
   },
+
+  // .computerUse — native computer use interface (tcc, screenshot, display, apps)
+  // On macOS this is a native Swift addon; on Linux we delegate to our
+  // computer_use.js module which uses grim/xdotool/ydotool/wmctrl.
+  computerUse: (() => {
+    let cu;
+    try { cu = require('../cowork/computer_use'); } catch (_) { cu = null; }
+    let cuPerm;
+    try { cuPerm = require('../cowork/computer_use_permission'); } catch (_) { cuPerm = null; }
+
+    const { screen } = require('electron');
+
+    // Get primary display info for display.getSize / listAll
+    function getDisplayObj(d) {
+      return {
+        displayId: d.id,
+        width: d.size.width,
+        height: d.size.height,
+        scaleFactor: d.scaleFactor,
+        originX: d.bounds.x,
+        originY: d.bounds.y,
+        isPrimary: d.id === screen.getPrimaryDisplay().id,
+        label: d.label || `Display ${d.id}`,
+      };
+    }
+
+    return {
+      tcc: {
+        checkAccessibility() {
+          if (!cuPerm) return false;
+          const state = cuPerm.getState();
+          return state.accessibility;
+        },
+        checkScreenRecording() {
+          if (!cuPerm) return false;
+          const state = cuPerm.getState();
+          return state.screenRecording;
+        },
+        requestAccessibility() {
+          if (!cuPerm) return false;
+          return cuPerm.requestPermission('accessibility', 'tcc');
+        },
+        requestScreenRecording() {
+          if (!cuPerm) return false;
+          return cuPerm.requestPermission('screenRecording', 'tcc');
+        },
+      },
+
+      screenshot: {
+        captureExcluding(_allowedBundleIds, _quality, width, height, _displayId) {
+          // Capture full screen, return as base64 PNG
+          if (!cu) throw new Error('computer_use module not available');
+          const b64 = cu.captureScreenshot();
+          return { data: b64, width, height };
+        },
+        captureRegion(_scale, x, y, w, h, outW, outH, _quality, _displayId) {
+          // Linux: capture full screen (region crop would require extra tooling)
+          if (!cu) throw new Error('computer_use module not available');
+          const b64 = cu.captureScreenshot();
+          return { data: b64, x, y, w, h, width: outW, height: outH };
+        },
+      },
+
+      display: {
+        getSize(displayId) {
+          const displays = screen.getAllDisplays();
+          const d = displayId != null
+            ? (displays.find(dd => dd.id === displayId) || screen.getPrimaryDisplay())
+            : screen.getPrimaryDisplay();
+          return {
+            width: d.size.width,
+            height: d.size.height,
+            scaleFactor: d.scaleFactor,
+          };
+        },
+        listAll() {
+          return screen.getAllDisplays().map(getDisplayObj);
+        },
+      },
+
+      apps: {
+        prepareDisplay(_displayId, _bundleId, _hideSet) {
+          return { activated: null, hidden: [] };
+        },
+        previewHideSet(_excludeBundleIds, _displayId) {
+          return [];
+        },
+        findWindowDisplays(_bundleIds) {
+          // Return primary display for all
+          const primary = screen.getPrimaryDisplay();
+          return [primary.id];
+        },
+        listInstalled() {
+          return [];
+        },
+        listRunning() {
+          if (!cu) return [];
+          try {
+            return cu.getOpenWindows().map(w => ({
+              bundleId: w.id,
+              displayName: w.title,
+            }));
+          } catch (_) { return []; }
+        },
+        open(bundleId) {
+          // Best effort: try xdg-open
+          try {
+            require('child_process').execFile('xdg-open', [bundleId]);
+          } catch (_) {}
+        },
+        iconDataUrl(_bundleId) {
+          return null;
+        },
+        appUnderPoint(_x, _y) {
+          return null;
+        },
+        unhide(_bundleIds) {},
+      },
+
+      resolvePrepareCapture(_allowedBundleIds, _hostBundleId, _quality, _w, _h, _displayId, _autoResolve, _doHide) {
+        // No window hiding needed on Linux
+        if (!cu) throw new Error('computer_use module not available');
+        const b64 = cu.captureScreenshot();
+        return { data: b64, hidden: [] };
+      },
+    };
+  })(),
 };
 
 // When the app does `(await import("@ant/claude-swift")).default`, ESM-from-CJS

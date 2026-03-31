@@ -14,6 +14,7 @@ from . import patch_api_headers
 from . import patch_binary_manager
 from . import patch_binary_resolution
 from . import patch_preload_paths
+from . import patch_computer_use
 from . import inject_cowork_init
 
 PATCHES = [
@@ -25,6 +26,7 @@ PATCHES = [
     ("API headers", patch_api_headers),
     ("Binary manager (getHostPlatform)", patch_binary_manager),
     ("Binary resolution (getLocalBinaryPath)", patch_binary_resolution),
+    ("Computer use platform gates", patch_computer_use),
     ("Cowork initialization", inject_cowork_init),
 ]
 
