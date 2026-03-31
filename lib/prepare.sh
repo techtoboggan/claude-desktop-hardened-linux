@@ -368,9 +368,7 @@ _capp.on("browser-window-created",(e,w)=>{
       "object-fit:contain;",
       "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
     "}",
-    "button,[role=button],[role=tab],a,input,select,textarea{",
-      "-webkit-app-region:no-drag;",
-    "}",
+    "body,body *{-webkit-app-region:no-drag;}",
   ].join("");
 
   // JS: wait for first top-left nav button, shift its container right, append icon.
