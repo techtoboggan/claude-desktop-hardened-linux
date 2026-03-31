@@ -58,6 +58,58 @@ def apply(content):
         total_patched += 1
         print(f'  [found] listInstalledApps darwin guard')
 
+    # Pattern 4: hasComputerUse gate — o7()
+    #   function X(){return process.platform==="darwin"&&Y()&&Ur("chicagoEnabled")}
+    # This determines whether computer use tools are offered to the model.
+    pattern_has_cu = (
+        r'function\s+([\w$]+)\(\)\{'
+        r'return process\.platform==="darwin"&&([\w$]+)\(\)&&([\w$]+)\("chicagoEnabled"\)'
+        r'\}'
+    )
+    for match in reversed(list(re.finditer(pattern_has_cu, content))):
+        func_name = match.group(1)
+        yn_func = match.group(2)
+        ur_func = match.group(3)
+        print(f'  [found] hasComputerUse gate: {func_name}()')
+        replacement = (
+            f'function {func_name}()'
+            f'{{return(process.platform==="darwin"||process.platform==="linux")'
+            f'&&{yn_func}()&&{ur_func}("chicagoEnabled")}}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        total_patched += 1
+
+    # Pattern 5: computerUseAvailableButOptedOut — ion()
+    #   function X(){return process.platform==="darwin"&&Y()&&!Ur("chicagoEnabled")}
+    pattern_opted_out = (
+        r'function\s+([\w$]+)\(\)\{'
+        r'return process\.platform==="darwin"&&([\w$]+)\(\)&&!([\w$]+)\("chicagoEnabled"\)'
+        r'\}'
+    )
+    for match in reversed(list(re.finditer(pattern_opted_out, content))):
+        func_name = match.group(1)
+        yn_func = match.group(2)
+        ur_func = match.group(3)
+        print(f'  [found] computerUseAvailableButOptedOut gate: {func_name}()')
+        replacement = (
+            f'function {func_name}()'
+            f'{{return(process.platform==="darwin"||process.platform==="linux")'
+            f'&&{yn_func}()&&!{ur_func}("chicagoEnabled")}}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        total_patched += 1
+
+    # Pattern 6: HFt capabilities platform constant
+    #   {screenshotFiltering:"native",platform:"darwin"}
+    # This is passed to the computer use tool builder. On Linux we keep
+    # screenshotFiltering:"native" but change platform to "linux".
+    old_cap = 'screenshotFiltering:"native",platform:"darwin"'
+    new_cap = 'screenshotFiltering:"native",platform:process.platform'
+    if old_cap in content:
+        content = content.replace(old_cap, new_cap, 1)
+        total_patched += 1
+        print('  [found] HFt capabilities platform constant')
+
     if total_patched == 0:
         print('  [skip] No computer use platform gates found')
         return content, False

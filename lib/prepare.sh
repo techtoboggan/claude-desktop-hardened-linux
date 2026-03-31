@@ -226,6 +226,20 @@ _capp.on("ready",()=>{
     }
   }catch(ex){console.error("[cowork-linux] VM marker creation failed:",ex.message);}
 
+  // Enable computer use (chicagoEnabled) on Linux. The app defaults to false and
+  // gates the feature behind process.platform==="darwin", which we patch out.
+  // This ensures the setting is on so computer use tools are offered to the model.
+  try{
+    const _configPath=require("path").join(_capp.getPath("userData"),"config.json");
+    let _cfg={};
+    try{_cfg=JSON.parse(require("fs").readFileSync(_configPath,"utf8"));}catch(_){}
+    if(!_cfg.chicagoEnabled){
+      _cfg.chicagoEnabled=true;
+      require("fs").writeFileSync(_configPath,JSON.stringify(_cfg));
+      console.log("[cowork-linux] Enabled chicagoEnabled (computer use) in config");
+    }
+  }catch(ex){console.error("[cowork-linux] Failed to enable computer use config:",ex.message);}
+
   // Register stub handlers for eipc interfaces that have no implementation on Linux.
   // The eipc framework's catch-all may register first, so we delay and replace.
   setTimeout(()=>{
