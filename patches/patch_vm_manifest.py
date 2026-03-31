@@ -1,9 +1,10 @@
 """Add Linux entries to the VM image manifest."""
 
+import os
 import re
 
 
-def apply(content):
+def apply(content, asar_dir=None):
     """
     Add linux:{x64,arm64} to qn.files so the VM image check passes.
 
@@ -29,6 +30,7 @@ def apply(content):
             insert_point = sha_match.end()
             content = content[:insert_point] + linux_entry + ',' + content[insert_point:]
             print('  [ok] Injected Linux VM manifest entry (via sha fallback)')
+            _write_vm_sha(content, asar_dir)
             return content, True
         else:
             print('  [FAIL] Could not find VM manifest at all')
@@ -38,4 +40,20 @@ def apply(content):
     replacement = 'files:{' + linux_entry + ',' + insert_text[len('files:{'):]
     content = content.replace(insert_text, replacement, 1)
     print('  [ok] Added Linux entry to VM manifest')
+    _write_vm_sha(content, asar_dir)
     return content, True
+
+
+def _write_vm_sha(content, asar_dir):
+    """Extract the VM manifest SHA and write it to .vm-sha in the asar dir."""
+    if not asar_dir:
+        return
+    sha_match = re.search(r'sha:"([a-f0-9]{40,})"', content)
+    if not sha_match:
+        print('  [warn] Could not extract VM manifest SHA')
+        return
+    sha = sha_match.group(1)
+    sha_path = os.path.join(asar_dir, '.vm-sha')
+    with open(sha_path, 'w') as f:
+        f.write(sha)
+    print(f'  [ok] Wrote VM manifest SHA to .vm-sha: {sha}')
