@@ -110,6 +110,56 @@ def apply(content):
         total_patched += 1
         print('  [found] HFt capabilities platform constant')
 
+    # Pattern 7: Computer-use MCP server registration gate
+    #   process.platform==="darwin"&&t.push(await wZr())
+    # The computer-use MCP server is only registered on macOS.
+    # Without this, the CLI agent never sees the mcp__computer-use tool.
+    pattern_mcp_reg = (
+        r'process\.platform==="darwin"&&(\w+)\.push\(await (\w+)\(\)\)'
+    )
+    # We need to be careful to only match the one near wZr/computer-use context.
+    # Look for pattern that follows the louderPenguinEnabled block and precedes getImagineServerDef.
+    for match in reversed(list(re.finditer(pattern_mcp_reg, content))):
+        arr_var = match.group(1)
+        fn_name = match.group(2)
+        # Verify this is the computer-use registration by checking nearby context
+        start = max(0, match.start() - 200)
+        context = content[start:match.end() + 200]
+        if 'computer-use' in context or 'serverName:' in context or 'Imagine' in context[match.end()-start:]:
+            replacement = (
+                f'(process.platform==="darwin"||process.platform==="linux")'
+                f'&&{arr_var}.push(await {fn_name}())'
+            )
+            content = content[:match.start()] + replacement + content[match.end():]
+            total_patched += 1
+            print(f'  [found] Computer-use MCP server registration gate: {fn_name}()')
+            break  # Only patch this one occurrence
+
+    # Pattern 8: Server-side feature flag override
+    #   function X(){return!1}function Y(){return X()?!0:js(...)}
+    # X() is a hardcoded override that always returns false, meaning the
+    # computer-use "enabled" check always hits the server-side GrowthBook flag.
+    # On Linux the server flag isn't enabled, so we patch X() to return true,
+    # which makes Y() short-circuit to !0 (enabled) unconditionally.
+    pattern_override = (
+        r'function\s+([\w$]+)\(\)\{return!1\}'
+        r'(function\s+([\w$]+)\(\)\{return\s*\1\(\)\?!0:)'
+    )
+    for match in reversed(list(re.finditer(pattern_override, content))):
+        override_fn = match.group(1)
+        wrapper_fn = match.group(3)
+        # Verify context: the wrapper should be used by hasComputerUse
+        end_ctx = content[match.end():match.end() + 300]
+        if 'chicagoEnabled' in end_ctx or 'platform' in end_ctx:
+            replacement = (
+                f'function {override_fn}(){{return!0}}'
+                f'{match.group(2)}'
+            )
+            content = content[:match.start()] + replacement + content[match.end():]
+            total_patched += 1
+            print(f'  [found] Server-side feature flag override: {override_fn}() → true')
+            break
+
     if total_patched == 0:
         print('  [skip] No computer use platform gates found')
         return content, False
