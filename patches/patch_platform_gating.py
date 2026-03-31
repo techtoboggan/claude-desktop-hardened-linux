@@ -16,7 +16,8 @@ def apply(content):
 
     # Pattern 1: functions checking both darwin AND win32
     #   function X(){const t=process.platform;if(t!=="darwin"&&t!=="win32")return{status:"unsupported"...
-    pattern1 = r'function\s+(\w+)\s*\(\)\s*\{const\s+\w=process\.platform;if\(\w!=="darwin"&&\w!=="win32"\)return\{status:"unsupported"'
+    # Note: [\w$] because JS minifiers produce identifiers like $un
+    pattern1 = r'function\s+([\w$]+)\s*\(\)\s*\{const\s+[\w$]=process\.platform;if\([\w$]!=="darwin"&&[\w$]!=="win32"\)return\{status:"unsupported"'
 
     for match in reversed(list(re.finditer(pattern1, content))):
         func_name = match.group(1)
