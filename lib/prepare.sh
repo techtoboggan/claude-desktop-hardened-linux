@@ -312,6 +312,17 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
   };
 }
 
+// Inject no-drag CSS into ALL webContents (BrowserWindows AND WebContentsViews).
+// The main Claude UI renders in a WebContentsView (not the BrowserWindow's own
+// webContents), so browser-window-created alone misses it.
+if(process.platform==="linux"){
+  _capp.on("web-contents-created",(e,wc)=>{
+    const _noDrag="body,body *{-webkit-app-region:no-drag !important;}";
+    wc.on("dom-ready",()=>{wc.insertCSS(_noDrag).catch(()=>{});});
+    wc.on("did-navigate-in-page",()=>{wc.insertCSS(_noDrag).catch(()=>{});});
+  });
+}
+
 _capp.on("browser-window-created",(e,w)=>{
   if(process.platform==="linux"){
     // Hide the visual menu bar but don't touch the Menu object
@@ -368,7 +379,6 @@ _capp.on("browser-window-created",(e,w)=>{
       "object-fit:contain;",
       "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
     "}",
-    "body,body *{-webkit-app-region:no-drag;}",
   ].join("");
 
   // JS: wait for first top-left nav button, shift its container right, append icon.
