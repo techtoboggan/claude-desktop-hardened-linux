@@ -313,6 +313,9 @@ function buildBwrapCommand(claudeBinary, args, workDir, env) {
     } catch (_) {}
   }
 
+  // Read-only: Claude config file in home directory root
+  roBindIfExists(bwrapArgs, path.join(home, '.claude.json'));
+
   // Read-only: node/npm paths the CLI may need to resolve modules
   const nodeReadonly = [
     path.join(home, '.nvm'),
