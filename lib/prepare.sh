@@ -203,6 +203,29 @@ if(process.platform==="linux"){
 _capp.on("ready",()=>{
   try{if(!_iconFull.isEmpty()&&_capp.setIcon)_capp.setIcon(_iconFull);}catch(ex){}
 
+  // Create VM bundle marker files so the download-status check returns "Ready".
+  // On Linux we run Claude Code natively (no VM), but the app checks for the
+  // manifest file ("native") and its origin stamp (.native.origin containing the
+  // manifest sha). Without these, the UI shows a "Download" banner.
+  try{
+    const _vmBundleDir=require("path").join(_capp.getPath("userData"),"vm_bundles","claudevm.bundle");
+    require("fs").mkdirSync(_vmBundleDir,{recursive:true});
+    const _nativePath=require("path").join(_vmBundleDir,"native");
+    const _originPath=require("path").join(_vmBundleDir,".native.origin");
+    if(!require("fs").existsSync(_nativePath))require("fs").writeFileSync(_nativePath,"linux-native");
+    // .native.origin must contain the VM manifest SHA for the download check to pass.
+    // The SHA is extracted at build time by patch_vm_manifest.py and saved to .vm-sha.
+    const _asarPath=require("path").join(__dirname,"..","..",".vm-sha");
+    let _vmSha="";
+    try{_vmSha=require("fs").readFileSync(_asarPath,"utf8").trim();}catch(_){}
+    if(_vmSha){
+      require("fs").writeFileSync(_originPath,_vmSha);
+      console.log("[cowork-linux] VM markers created (sha: "+_vmSha.slice(0,12)+"...)");
+    }else{
+      console.warn("[cowork-linux] .vm-sha not found in asar — VM download banner may appear");
+    }
+  }catch(ex){console.error("[cowork-linux] VM marker creation failed:",ex.message);}
+
   // Register stub handlers for eipc interfaces that have no implementation on Linux.
   // The eipc framework's catch-all may register first, so we delay and replace.
   setTimeout(()=>{

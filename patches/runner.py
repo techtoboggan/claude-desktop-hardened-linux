@@ -1,5 +1,6 @@
 """Orchestrate all Cowork patches in sequence."""
 
+import inspect
 import os
 import subprocess
 import sys
@@ -48,7 +49,11 @@ def run(asar_dir):
 
     for i, (name, module) in enumerate(PATCHES, 1):
         print(f'  [patch {i}/{total_patches}] {name}...')
-        result = module.apply(content)
+        sig = inspect.signature(module.apply)
+        if 'asar_dir' in sig.parameters:
+            result = module.apply(content, asar_dir=asar_dir)
+        else:
+            result = module.apply(content)
         if isinstance(result, tuple):
             content, ok = result
         else:
