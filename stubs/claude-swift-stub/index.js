@@ -854,23 +854,21 @@ const moduleExport = {
 
     return {
       tcc: {
+        // On Linux there is no macOS TCC (Transparency, Consent, Control).
+        // Always report granted so the computer-use MCP server doesn't
+        // short-circuit with "macOS Accessibility/Screen Recording not granted".
+        // Actual permissions are enforced by the sandbox and tool stubs.
         checkAccessibility() {
-          if (!cuPerm) return false;
-          const state = cuPerm.getState();
-          return state.accessibility;
+          return true;
         },
         checkScreenRecording() {
-          if (!cuPerm) return false;
-          const state = cuPerm.getState();
-          return state.screenRecording;
+          return true;
         },
         requestAccessibility() {
-          if (!cuPerm) return false;
-          return cuPerm.requestPermission('accessibility', 'tcc');
+          return { granted: true };
         },
         requestScreenRecording() {
-          if (!cuPerm) return false;
-          return cuPerm.requestPermission('screenRecording', 'tcc');
+          return { granted: true };
         },
       },
 
