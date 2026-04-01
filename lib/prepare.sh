@@ -408,14 +408,23 @@ _capp.on("browser-window-created",(e,w)=>{
       "width:42px;height:44px;",
       "z-index:2147483647;",
       "display:flex;align-items:center;justify-content:center;",
-      "-webkit-app-region:drag;",
+      "-webkit-app-region:drag !important;",
       "user-select:none;box-sizing:border-box;padding:9px;",
     "}",
     "#_cld_icon img{",
       "width:100%;height:100%;",
-      "pointer-events:none;-webkit-app-region:no-drag;",
+      "pointer-events:none;-webkit-app-region:no-drag !important;",
       "object-fit:contain;",
       "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
+    "}",
+    // Thin drag edge along the very top of the window — above all buttons/tabs.
+    // Users can grab this strip to drag the window, like a standard Linux title bar.
+    "#_cld_drag_edge{",
+      "position:fixed;top:0;left:42px;right:0;",
+      "height:8px;",
+      "z-index:2147483647;",
+      "-webkit-app-region:drag !important;",
+      "user-select:none;",
     "}",
   ].join("");
 
@@ -429,6 +438,12 @@ _capp.on("browser-window-created",(e,w)=>{
       "img.src='",_iconDataUrl,"';",
       "img.alt='Claude';",
       "el.appendChild(img);",
+      // Also inject the drag edge strip
+      "if(!document.getElementById('_cld_drag_edge')){",
+        "const edge=document.createElement('div');",
+        "edge.id='_cld_drag_edge';",
+        "document.documentElement.appendChild(edge);",
+      "}",
       "const place=()=>{",
         "const all=Array.from(document.querySelectorAll('button,[role=button],[role=tab]'));",
         "const tl=all.find(b=>{const r=b.getBoundingClientRect();",

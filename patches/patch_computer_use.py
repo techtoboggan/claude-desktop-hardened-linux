@@ -160,6 +160,24 @@ def apply(content):
             print(f'  [found] Server-side feature flag override: {override_fn}() → true')
             break
 
+    # Pattern 9: createDarwinExecutor platform guard
+    #   function LHr(t){if(process.platform!=="darwin")throw new Error(`createDarwinExecutor called on ${process.platform}...`)
+    # This blocks ALL computer-use tool execution on non-darwin platforms.
+    pattern_executor = (
+        r'if\(process\.platform!=="darwin"\)'
+        r'throw new Error\(`createDarwinExecutor called on \$\{process\.platform\}\.'
+        r' Computer control is macOS-only in Phase 1\.`\)'
+    )
+    for match in reversed(list(re.finditer(pattern_executor, content))):
+        replacement = (
+            'if(process.platform!=="darwin"&&process.platform!=="linux")'
+            'throw new Error(`createDarwinExecutor called on ${process.platform}.'
+            ' Computer control is macOS-only in Phase 1.`)'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        total_patched += 1
+        print(f'  [found] createDarwinExecutor platform guard')
+
     if total_patched == 0:
         print('  [skip] No computer use platform gates found')
         return content, False
