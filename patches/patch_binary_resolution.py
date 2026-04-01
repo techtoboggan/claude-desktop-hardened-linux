@@ -1,13 +1,14 @@
-"""Patch getLocalBinaryPath() to find system-installed Claude Code on Linux."""
+"""Patch getLocalBinaryPath() to find system-installed Claude Code on Linux.
+
+Prefer user-local installs (~/.local/bin) over system packages (/usr/bin)
+because user-local installs are kept current by `claude update` and carry
+newer built-in tools (e.g. SendUserMessage for Dispatch).
+"""
 
 import re
 
 
 def apply(content):
-    """
-    On Linux, Claude Code is installed system-wide. Patch getLocalBinaryPath()
-    to check standard paths before falling through to the managed-download flow.
-    """
     pattern = r'async getLocalBinaryPath\(\)\{return this\.localBinaryInitPromise&&await this\.localBinaryInitPromise,this\.localBinaryPath\}'
     match = re.search(pattern, content)
     if match:
@@ -15,9 +16,10 @@ def apply(content):
             'async getLocalBinaryPath(){'
             'if(process.platform==="linux"){'
             'const fs=require("fs"),os=require("os"),'
-            'paths=["/usr/bin/claude","/usr/local/bin/claude",'
+            'paths=['
             'os.homedir()+"/.local/bin/claude",'
-            'os.homedir()+"/.npm-global/bin/claude"];'
+            'os.homedir()+"/.npm-global/bin/claude",'
+            '"/usr/local/bin/claude","/usr/bin/claude"];'
             'for(const p of paths){try{await fs.promises.access(p);return p}catch{}}'
             '}'
             'return this.localBinaryInitPromise&&await this.localBinaryInitPromise,this.localBinaryPath}'
