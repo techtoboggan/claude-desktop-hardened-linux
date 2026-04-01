@@ -226,17 +226,18 @@ _capp.on("ready",()=>{
     }
   }catch(ex){console.error("[cowork-linux] VM marker creation failed:",ex.message);}
 
-  // Enable computer use (chicagoEnabled) on Linux. The app defaults to false and
-  // gates the feature behind process.platform==="darwin", which we patch out.
+  // Enable computer use (chicagoEnabled) on Linux. The app reads user preferences
+  // from claude_desktop_config.json under the "preferences" key, NOT config.json.
   // This ensures the setting is on so computer use tools are offered to the model.
   try{
-    const _configPath=require("path").join(_capp.getPath("userData"),"config.json");
-    let _cfg={};
-    try{_cfg=JSON.parse(require("fs").readFileSync(_configPath,"utf8"));}catch(_){}
-    if(!_cfg.chicagoEnabled){
-      _cfg.chicagoEnabled=true;
-      require("fs").writeFileSync(_configPath,JSON.stringify(_cfg));
-      console.log("[cowork-linux] Enabled chicagoEnabled (computer use) in config");
+    const _cdcPath=require("path").join(_capp.getPath("userData"),"claude_desktop_config.json");
+    let _cdc={};
+    try{_cdc=JSON.parse(require("fs").readFileSync(_cdcPath,"utf8"));}catch(_){}
+    if(!_cdc.preferences)_cdc.preferences={};
+    if(!_cdc.preferences.chicagoEnabled){
+      _cdc.preferences.chicagoEnabled=true;
+      require("fs").writeFileSync(_cdcPath,JSON.stringify(_cdc,null,2));
+      console.log("[cowork-linux] Enabled chicagoEnabled (computer use) in preferences");
     }
   }catch(ex){console.error("[cowork-linux] Failed to enable computer use config:",ex.message);}
 
