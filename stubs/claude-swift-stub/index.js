@@ -28,10 +28,10 @@ const SESSION_BASE = path.join(
 );
 
 const CLAUDE_BINARY_SEARCH_PATHS = [
-  '/usr/bin/claude',
-  '/usr/local/bin/claude',
   path.join(os.homedir(), '.local', 'bin', 'claude'),
   path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
+  '/usr/local/bin/claude',
+  '/usr/bin/claude',
 ];
 
 // Environment variables allowed to pass through to Claude Code CLI
@@ -62,6 +62,7 @@ const BINARY_PATH_ALLOWLIST = [
   '/usr/local/bin/',
   '/usr/bin/',
   path.join(os.homedir(), '.local', 'bin') + '/',
+  path.join(os.homedir(), '.local', 'share', 'claude') + '/',
   path.join(os.homedir(), '.npm-global', 'bin') + '/',
   path.join(os.homedir(), '.config', 'Claude', 'claude-code-vm') + '/',
 ];
@@ -120,6 +121,11 @@ function isPathAllowed(binaryPath) {
 
 /**
  * Filter environment variables through the allowlist.
+ *
+ * process.env is filtered strictly (only ENV_ALLOWLIST).
+ * extraEnv comes from the trusted Electron app session config and is
+ * passed through entirely — it contains CLAUDE_CODE_BRIEF, TZ, etc.
+ * that the CLI needs but that should not leak from the host env.
  */
 function filterEnv(extraEnv = {}) {
   const filtered = {};
@@ -128,9 +134,11 @@ function filterEnv(extraEnv = {}) {
       filtered[key] = process.env[key];
     }
   }
-  // Merge extra env (e.g., CLAUDE_CODE_OAUTH_TOKEN from the app)
+  // Pass through all env vars from the Electron app session config.
+  // These are set by the app itself (not user-controlled) and include
+  // CLAUDE_CODE_BRIEF, CLAUDE_CODE_IS_COWORK, TZ, etc.
   for (const [key, value] of Object.entries(extraEnv)) {
-    if (ENV_ALLOWLIST.has(key)) {
+    if (value !== undefined) {
       filtered[key] = value;
     }
   }
@@ -315,6 +323,11 @@ function buildBwrapCommand(claudeBinary, args, workDir, env) {
 
   // Read-only: Claude config file in home directory root
   roBindIfExists(bwrapArgs, path.join(home, '.claude.json'));
+
+  // Read-only: Claude CLI binary installed via `claude update` (symlink target)
+  roBindIfExists(bwrapArgs, path.join(home, '.local', 'share', 'claude'));
+  // Read-only: user-local bin (contains claude symlink)
+  roBindIfExists(bwrapArgs, path.join(home, '.local', 'bin'));
 
   // Read-only: node/npm paths the CLI may need to resolve modules
   const nodeReadonly = [
