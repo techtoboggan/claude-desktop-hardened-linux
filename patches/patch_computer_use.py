@@ -111,18 +111,33 @@ def apply(content):
         print('  [found] HFt capabilities platform constant')
 
     # Pattern 7: Computer-use MCP server registration gate
-    #   process.platform==="darwin"&&t.push(await wZr())
-    # The computer-use MCP server is only registered on macOS.
+    # v1.1.x: process.platform==="darwin"&&t.push(await wZr())
+    # v1.2.x: vee()&&t.push(await upn())  where vee() checks ese Set
     # Without this, the CLI agent never sees the mcp__computer-use tool.
+    #
+    # Approach: patch the ese Set to include "linux" (covers vee() gate
+    # AND the platform support check), plus keep legacy pattern as fallback.
+
+    # v1.2.x: Add "linux" to the supported platforms Set
+    #   new Set(["darwin","win32"])  →  new Set(["darwin","win32","linux"])
+    pattern_platform_set = r'new Set\(\["darwin","win32"\]\)'
+    for match in reversed(list(re.finditer(pattern_platform_set, content))):
+        # Verify context: should be near computer-use / vee function
+        ctx = content[match.end():match.end() + 200]
+        if 'platform' in ctx or 'computerUse' in ctx or 'screenshotFiltering' in ctx:
+            replacement = 'new Set(["darwin","win32","linux"])'
+            content = content[:match.start()] + replacement + content[match.end():]
+            total_patched += 1
+            print('  [found] Platform support Set: added "linux"')
+            break
+
+    # Legacy v1.1.x fallback: process.platform==="darwin"&&t.push(await fn())
     pattern_mcp_reg = (
         r'process\.platform==="darwin"&&(\w+)\.push\(await (\w+)\(\)\)'
     )
-    # We need to be careful to only match the one near wZr/computer-use context.
-    # Look for pattern that follows the louderPenguinEnabled block and precedes getImagineServerDef.
     for match in reversed(list(re.finditer(pattern_mcp_reg, content))):
         arr_var = match.group(1)
         fn_name = match.group(2)
-        # Verify this is the computer-use registration by checking nearby context
         start = max(0, match.start() - 200)
         context = content[start:match.end() + 200]
         if 'computer-use' in context or 'serverName:' in context or 'Imagine' in context[match.end()-start:]:
@@ -132,8 +147,8 @@ def apply(content):
             )
             content = content[:match.start()] + replacement + content[match.end():]
             total_patched += 1
-            print(f'  [found] Computer-use MCP server registration gate: {fn_name}()')
-            break  # Only patch this one occurrence
+            print(f'  [found] Computer-use MCP server registration gate (legacy): {fn_name}()')
+            break
 
     # Pattern 8: Server-side feature flag override
     #   function X(){return!1}function Y(){return X()?!0:js(...)}
@@ -161,22 +176,34 @@ def apply(content):
             break
 
     # Pattern 9: createDarwinExecutor platform guard
-    #   function LHr(t){if(process.platform!=="darwin")throw new Error(`createDarwinExecutor called on ${process.platform}...`)
+    # v1.1.x: ...`createDarwinExecutor called on ${process.platform}. Computer control is macOS-only in Phase 1.`
+    # v1.2.x: ...`createDarwinExecutor called on ${process.platform}. Use createWin32Executor for Windows.`
     # This blocks ALL computer-use tool execution on non-darwin platforms.
-    pattern_executor = (
-        r'if\(process\.platform!=="darwin"\)'
-        r'throw new Error\(`createDarwinExecutor called on \$\{process\.platform\}\.'
-        r' Computer control is macOS-only in Phase 1\.`\)'
-    )
-    for match in reversed(list(re.finditer(pattern_executor, content))):
-        replacement = (
-            'if(process.platform!=="darwin"&&process.platform!=="linux")'
-            'throw new Error(`createDarwinExecutor called on ${process.platform}.'
-            ' Computer control is macOS-only in Phase 1.`)'
-        )
-        content = content[:match.start()] + replacement + content[match.end():]
-        total_patched += 1
-        print(f'  [found] createDarwinExecutor platform guard')
+    executor_patterns = [
+        # v1.2.x format
+        (
+            r'if\(process\.platform!=="darwin"\)'
+            r'throw new Error\(`createDarwinExecutor called on \$\{process\.platform\}\.'
+            r' Use createWin32Executor for Windows\.`\)'
+        ),
+        # v1.1.x format (legacy)
+        (
+            r'if\(process\.platform!=="darwin"\)'
+            r'throw new Error\(`createDarwinExecutor called on \$\{process\.platform\}\.'
+            r' Computer control is macOS-only in Phase 1\.`\)'
+        ),
+    ]
+    for pattern_executor in executor_patterns:
+        for match in reversed(list(re.finditer(pattern_executor, content))):
+            # Replace: allow Linux through, keep original error for other platforms
+            original_throw = match.group(0)[len('if(process.platform!=="darwin")'):]
+            replacement = (
+                'if(process.platform!=="darwin"&&process.platform!=="linux")'
+                + original_throw
+            )
+            content = content[:match.start()] + replacement + content[match.end():]
+            total_patched += 1
+            print(f'  [found] createDarwinExecutor platform guard')
 
     if total_patched == 0:
         print('  [skip] No computer use platform gates found')
