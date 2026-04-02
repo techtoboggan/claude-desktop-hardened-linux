@@ -205,6 +205,77 @@ def apply(content):
             total_patched += 1
             print(f'  [found] createDarwinExecutor platform guard')
 
+    # Pattern 10: App resolution function — auto-resolve unknown apps on Linux
+    # Djr(requestedNames, installedApps, grantedSet) resolves each requested app
+    # name against the installed apps list. On Linux, listInstalledApps() may return
+    # fewer apps (no macOS .app bundles), so apps the agent requests (e.g. "Finder")
+    # come back with resolved=null → denied as "not_installed".
+    # Fix: after the lookup fails, synthesize a resolved entry on Linux.
+    #
+    # Original: a||(a=n.get(s.toLowerCase()));
+    # Patched:  a||(a=n.get(s.toLowerCase()));if(!a&&process.platform==="linux"){a={bundleId:s,displayName:s,path:s}}
+    pattern_app_resolve = (
+        r'(\w)\|\|\(\1=(\w)\.get\((\w)\.toLowerCase\(\)\)\);'
+        r'(const \w=\1==null\?void 0:\1\.bundleId)'
+    )
+    for match in reversed(list(re.finditer(pattern_app_resolve, content))):
+        a_var = match.group(1)
+        n_var = match.group(2)
+        s_var = match.group(3)
+        rest = match.group(4)
+        replacement = (
+            f'{a_var}||({a_var}={n_var}.get({s_var}.toLowerCase()));'
+            f'if(!{a_var}&&process.platform==="linux")'
+            f'{{{a_var}={{bundleId:{s_var},displayName:{s_var},path:{s_var}}}}}'
+            f'{rest}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        total_patched += 1
+        print(f'  [found] App resolution function: auto-resolve on Linux')
+        break
+
+    # Pattern 11: Pg() setIgnoreMouseEvents wrapper — skip on Linux
+    # On macOS, Pg() sets setIgnoreMouseEvents(true) on all BrowserWindows during
+    # input actions (click, drag, scroll) to prevent the Claude window from
+    # intercepting clicks. On Linux (especially Wayland), this causes severe
+    # flickering and visual glitches because compositors handle this differently.
+    # Fix: on Linux, skip the setIgnoreMouseEvents calls entirely.
+    pattern_pg = (
+        r'async function ([\w$]+)\((\w)\)\{'
+        r'const (\w)=(\w+)\.BrowserWindow\.getAllWindows\(\)\.filter\((\w)=>!\5\.isDestroyed\(\)\);'
+        r'for\(const (\w) of \3\)\6\.setIgnoreMouseEvents\(!0\);'
+        r'await (\w+)\((\w+)\);'
+        r'try\{return await \2\(\)\}'
+        r'finally\{for\(const (\w) of \3\)!\9\.isDestroyed\(\)&&!(\w+)\.has\(\9\.id\)&&\9\.setIgnoreMouseEvents\(!1\)\}'
+        r'\}'
+    )
+    for match in reversed(list(re.finditer(pattern_pg, content))):
+        fn_name = match.group(1)
+        cb_var = match.group(2)
+        arr_var = match.group(3)
+        xe_var = match.group(4)
+        filt_var = match.group(5)
+        iter_var = match.group(6)
+        gm_fn = match.group(7)
+        delay_var = match.group(8)
+        iter2_var = match.group(9)
+        set_var = match.group(10)
+        # On Linux: just run the callback directly, no mouse-event toggling
+        replacement = (
+            f'async function {fn_name}({cb_var}){{'
+            f'if(process.platform==="linux"){{return await {cb_var}()}}'
+            f'const {arr_var}={xe_var}.BrowserWindow.getAllWindows().filter({filt_var}=>!{filt_var}.isDestroyed());'
+            f'for(const {iter_var} of {arr_var}){iter_var}.setIgnoreMouseEvents(!0);'
+            f'await {gm_fn}({delay_var});'
+            f'try{{return await {cb_var}()}}'
+            f'finally{{for(const {iter2_var} of {arr_var})!{iter2_var}.isDestroyed()&&!{set_var}.has({iter2_var}.id)&&{iter2_var}.setIgnoreMouseEvents(!1)}}'
+            f'}}'
+        )
+        content = content[:match.start()] + replacement + content[match.end():]
+        total_patched += 1
+        print(f'  [found] Pg() setIgnoreMouseEvents wrapper: skip on Linux')
+        break
+
     if total_patched == 0:
         print('  [skip] No computer use platform gates found')
         return content, False

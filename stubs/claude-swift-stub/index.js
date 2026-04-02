@@ -930,7 +930,42 @@ const moduleExport = {
           return [primary.id];
         },
         listInstalled() {
-          return [];
+          // Return installed Linux desktop applications.
+          // The permission system matches requested app names against this list
+          // by bundleId (exact) or displayName (case-insensitive).
+          const apps = [];
+          const seen = new Set();
+          const dataDirs = [
+            '/usr/share/applications',
+            '/usr/local/share/applications',
+            path.join(os.homedir(), '.local', 'share', 'applications'),
+          ];
+          for (const dir of dataDirs) {
+            let entries;
+            try { entries = fs.readdirSync(dir); } catch (_) { continue; }
+            for (const entry of entries) {
+              if (!entry.endsWith('.desktop')) continue;
+              const filePath = path.join(dir, entry);
+              try {
+                const content = fs.readFileSync(filePath, 'utf8');
+                // Extract Name= and Exec= from [Desktop Entry]
+                const nameMatch = content.match(/^Name=(.+)$/m);
+                const execMatch = content.match(/^Exec=(\S+)/m);
+                const noDisplay = content.match(/^NoDisplay=true$/m);
+                if (!nameMatch || noDisplay) continue;
+                const displayName = nameMatch[1].trim();
+                const bundleId = entry.replace('.desktop', '');
+                if (seen.has(bundleId)) continue;
+                seen.add(bundleId);
+                apps.push({
+                  bundleId,
+                  displayName,
+                  path: execMatch ? execMatch[1] : '/usr/bin/' + bundleId,
+                });
+              } catch (_) {}
+            }
+          }
+          return apps;
         },
         listRunning() {
           if (!cu) return [];
@@ -951,6 +986,19 @@ const moduleExport = {
           return null;
         },
         appUnderPoint(_x, _y) {
+          // Return the app under the given screen coordinates.
+          // Used by the executor to validate click targets.
+          if (!cu) return null;
+          try {
+            const windows = cu.getOpenWindows();
+            if (windows.length > 0) {
+              // Return the frontmost window as the "app under point".
+              // On Linux we can't easily do hit-testing, but the first
+              // window from the compositor is typically the focused one.
+              const w = windows[0];
+              return { bundleId: w.id, displayName: w.title };
+            }
+          } catch (_) {}
           return null;
         },
         unhide(_bundleIds) {},
