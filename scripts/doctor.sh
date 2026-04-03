@@ -92,16 +92,27 @@ fi
 
 # 4. Display server
 section "Display Server"
-if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
-    check_pass "Wayland session detected"
-    DS="wayland"
-elif [ -n "${DISPLAY:-}" ]; then
-    check_pass "X11 session detected (DISPLAY=$DISPLAY)"
-    DS="x11"
+# Source shared detection if available, otherwise inline fallback
+SHARE_DIR="$(dirname "$0")"
+if [ -f "$SHARE_DIR/display-server.sh" ]; then
+    # shellcheck source=../lib/display-server.sh
+    . "$SHARE_DIR/display-server.sh"
+    DS=$(detect_display_server)
 else
-    check_warn "No display server detected — running headless?"
-    DS="headless"
+    # Fallback for running outside install tree
+    if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+        DS="wayland"
+    elif [ -n "${DISPLAY:-}" ]; then
+        DS="x11"
+    else
+        DS="headless"
+    fi
 fi
+case "$DS" in
+    wayland)  check_pass "Wayland session detected" ;;
+    x11)      check_pass "X11 session detected (DISPLAY=$DISPLAY)" ;;
+    headless) check_warn "No display server detected — running headless?" ;;
+esac
 
 # 5. Display-server-specific tools
 section "Computer Use Tools ($DS)"

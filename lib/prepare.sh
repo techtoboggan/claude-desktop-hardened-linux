@@ -154,7 +154,7 @@ if(process.platform==="linux"){
         const real=_cPath.join(_appDir,rel);
         try{_fs.accessSync(real);opts.webPreferences.preload=real;
           console.log("[cowork-linux] preload redirected:",_cPath.basename(real));
-        }catch(_){}
+        }catch(e){console.warn("[cowork-linux] preload redirect failed: "+real+" not readable:",e.message);}
       }
     }
   };
@@ -591,6 +591,7 @@ PYEOF
 
     # Helper scripts
     mkdir -p "$INSTALL_DIR/share/$PACKAGE_NAME"
+    install -m 644 "$SCRIPT_DIR/lib/display-server.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/display-server.sh"
     install -m 755 "$SCRIPT_DIR/scripts/doctor.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/doctor.sh"
     install -m 755 "$SCRIPT_DIR/scripts/focus.sh" "$INSTALL_DIR/share/$PACKAGE_NAME/focus.sh"
     install -m 755 "$SCRIPT_DIR/scripts/portal-shortcut.py" "$INSTALL_DIR/share/$PACKAGE_NAME/portal-shortcut.py"

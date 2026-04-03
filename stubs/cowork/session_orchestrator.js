@@ -69,19 +69,29 @@ class SessionOrchestrator {
     // vm.spawn signature: (sessionId, processName, command, args, cwd, env,
     //   additionalMounts, isResume, allowedDomains, sharedCwdPath, oneShot)
     const workDir = options.workDir || os.homedir();
-    const handle = this._swift.spawn(
-      session.id,
-      session.name,        // processName
-      'claude',            // command (resolved by stub)
-      args,                // CLI arguments
-      workDir,             // cwd
-      env,                 // environment
-      options.mountPaths,  // additionalMounts
-      false,               // isResume
-      null,                // allowedDomains
-      null,                // sharedCwdPath
-      false                // oneShot
-    );
+    let handle;
+    try {
+      handle = this._swift.spawn(
+        session.id,
+        session.name,        // processName
+        'claude',            // command (resolved by stub)
+        args,                // CLI arguments
+        workDir,             // cwd
+        env,                 // environment
+        options.mountPaths,  // additionalMounts
+        false,               // isResume
+        null,                // allowedDomains
+        null,                // sharedCwdPath
+        false                // oneShot
+      );
+      if (!handle) {
+        throw new Error('spawn() returned null — Claude CLI process failed to start');
+      }
+    } catch (err) {
+      console.error(`[cowork-linux] Failed to spawn session ${session.id}:`, err.message);
+      this._store.update(session.id, { status: 'error', error: err.message });
+      throw err;
+    }
 
     this._activeHandles.set(session.id, handle);
     this._store.update(session.id, { status: 'running', pid: handle.pid });

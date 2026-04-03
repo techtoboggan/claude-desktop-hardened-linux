@@ -45,12 +45,41 @@ const ENV_ALLOWLIST = new Set([
   'SSH_AUTH_SOCK',
 ]);
 
-// Resource limits for sandboxed sessions (enforced via systemd-run)
-const RESOURCE_LIMITS = {
+// Default resource limits for sandboxed sessions (enforced via systemd-run).
+// Users can override these in ~/.config/Claude/cowork-limits.json:
+//   { "memoryMax": "8G", "cpuQuota": "400%", "tasksMax": "1024" }
+const DEFAULT_RESOURCE_LIMITS = {
   memoryMax: '4G',
   cpuQuota: '200%',   // 2 full cores
   tasksMax: '512',     // prevent fork bombs
 };
+
+function loadResourceLimits() {
+  const configPath = path.join(
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+    'Claude', 'cowork-limits.json'
+  );
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const overrides = JSON.parse(raw);
+    // Only accept known keys with valid formats to prevent injection
+    const result = { ...DEFAULT_RESOURCE_LIMITS };
+    if (typeof overrides.memoryMax === 'string' && /^\d+[GMKT]$/i.test(overrides.memoryMax)) {
+      result.memoryMax = overrides.memoryMax;
+    }
+    if (typeof overrides.cpuQuota === 'string' && /^\d+%$/.test(overrides.cpuQuota)) {
+      result.cpuQuota = overrides.cpuQuota;
+    }
+    if (typeof overrides.tasksMax === 'string' && /^\d+$/.test(overrides.tasksMax)) {
+      result.tasksMax = overrides.tasksMax;
+    }
+    return result;
+  } catch (_) {
+    return DEFAULT_RESOURCE_LIMITS;
+  }
+}
+
+const RESOURCE_LIMITS = loadResourceLimits();
 
 // Maximum concurrent Cowork sessions (prevent resource exhaustion)
 const MAX_CONCURRENT_SESSIONS = 10;
