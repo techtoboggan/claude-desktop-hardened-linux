@@ -104,6 +104,19 @@ SWIFTPKG
     mkdir -p app.asar.contents/resources/i18n/
     cp ../lib/net45/resources/*.json app.asar.contents/resources/i18n/
 
+    # cowork-plugin-shim.sh — expected by the plugin permission bridge.
+    # The upstream macOS build ships this as a native permission shim.
+    # On Linux there is no equivalent TCC/permission system, so we provide
+    # a no-op stub that exits cleanly. The bridge falls back gracefully.
+    cat > app.asar.contents/resources/cowork-plugin-shim.sh << 'SHIMEOF'
+#!/bin/sh
+# cowork-plugin-shim stub for Linux — no-op.
+# Plugin permissions on Linux are handled directly via Electron IPC.
+exit 0
+SHIMEOF
+    chmod 755 app.asar.contents/resources/cowork-plugin-shim.sh
+    log_ok "cowork-plugin-shim.sh stub installed"
+
     # Patch window decorations for Linux CSD
     log_step "🔧" "Patching window decorations..."
     node "$SCRIPT_DIR/scripts/patch-window.js" app.asar.contents
