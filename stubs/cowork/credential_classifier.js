@@ -48,6 +48,9 @@ const CREDENTIAL_PATTERNS = [
  * File: ~/.config/Claude/credential-patterns.json
  * Format: { "patterns": ["regex1", "regex2"] }
  */
+const MAX_PATTERN_LENGTH = 500;
+const MAX_USER_PATTERNS = 50;
+
 function loadUserPatterns() {
   const path = require('path');
   const fs = require('fs');
@@ -61,6 +64,8 @@ function loadUserPatterns() {
     const config = JSON.parse(raw);
     if (Array.isArray(config.patterns)) {
       return config.patterns
+        .slice(0, MAX_USER_PATTERNS)
+        .filter(p => typeof p === 'string' && p.length <= MAX_PATTERN_LENGTH)
         .map(p => { try { return new RegExp(p, 'g'); } catch (_) { return null; } })
         .filter(Boolean);
     }
