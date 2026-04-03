@@ -206,33 +206,70 @@ def apply(content):
             print(f'  [found] createDarwinExecutor platform guard')
 
     # Pattern 10: App resolution function — auto-resolve unknown apps on Linux
-    # Djr(requestedNames, installedApps, grantedSet) resolves each requested app
-    # name against the installed apps list. On Linux, listInstalledApps() may return
-    # fewer apps (no macOS .app bundles), so apps the agent requests (e.g. "Finder")
-    # come back with resolved=null → denied as "not_installed".
-    # Fix: after the lookup fails, synthesize a resolved entry on Linux.
+    # The app resolver matches requested names against installed apps. On Linux,
+    # listInstalledApps() may not have macOS bundle names (e.g. "Finder"), so
+    # apps come back with resolved=null → denied as "not_installed".
+    # Fix: inject a Linux auto-resolve just before the "didYouMean" / bundleId
+    # extraction that follows all lookup attempts.
     #
-    # Original: a||(a=n.get(s.toLowerCase()));
-    # Patched:  a||(a=n.get(s.toLowerCase()));if(!a&&process.platform==="linux"){a={bundleId:s,displayName:s,path:s}}
-    pattern_app_resolve = (
-        r'(\w)\|\|\(\1=(\w)\.get\((\w)\.toLowerCase\(\)\)\);'
-        r'(const \w=\1==null\?void 0:\1\.bundleId)'
-    )
-    for match in reversed(list(re.finditer(pattern_app_resolve, content))):
-        a_var = match.group(1)
-        n_var = match.group(2)
-        s_var = match.group(3)
-        rest = match.group(4)
-        replacement = (
-            f'{a_var}||({a_var}={n_var}.get({s_var}.toLowerCase()));'
-            f'if(!{a_var}&&process.platform==="linux")'
-            f'{{{a_var}={{bundleId:{s_var},displayName:{s_var},path:{s_var}}}}}'
-            f'{rest}'
-        )
-        content = content[:match.start()] + replacement + content[match.end():]
+    # We match the pattern: }}<resolved_var>=<resolved_var>==null?void 0:<resolved_var>.bundleId
+    # which appears right after all resolution attempts. We inject our Linux
+    # fallback just before this point.
+    #
+    # Variant A (v1.2.234 simple): a||(a=n.get(s.toLowerCase()));const o=a==null?void 0:a.bundleId
+    # Variant B (v1.2.234+ AUMID):  ...}}}const u=l?void 0:A7r(c,e),d=l==null?void 0:l.bundleId
+    app_resolve_patterns = [
+        # Variant A: simple — semicolon before const, resolved==null check
+        (
+            r'(\w)\|\|\(\1=(\w)\.get\((\w)\.toLowerCase\(\)\)\);'
+            r'(const \w=\1==null\?void 0:\1\.bundleId)',
+            lambda m: (
+                f'{m.group(1)}||({m.group(1)}={m.group(2)}.get({m.group(3)}.toLowerCase()));'
+                f'if(!{m.group(1)}&&process.platform==="linux")'
+                f'{{{m.group(1)}={{bundleId:{m.group(3)},displayName:{m.group(3)},path:{m.group(3)}}}}}'
+                f'{m.group(4)}'
+            )
+        ),
+        # Variant B: AUMID fallback — inject before the didYouMean/bundleId extraction
+        # Pattern: }}}const <u>=<l>?void 0:<fn>(<c>,<e>),<d>=<l>==null?void 0:<l>.bundleId
+        # We match on the resolved-var null check: <d>=<l>==null?void 0:<l>.bundleId
+        # and the preceding requestedName var from the map callback: .map(<c>=>{let <l>=
+        (
+            r'\.map\((\w)=>\{let (\w)=',
+            None  # handled specially below
+        ),
+    ]
+    # Try variant A first
+    pat_a, repl_a = app_resolve_patterns[0]
+    for match in reversed(list(re.finditer(pat_a, content))):
+        content = content[:match.start()] + repl_a(match) + content[match.end():]
         total_patched += 1
-        print(f'  [found] App resolution function: auto-resolve on Linux')
+        print(f'  [found] App resolution function: auto-resolve on Linux (variant A)')
         break
+    else:
+        # Try variant B: AUMID fallback code structure (v1.2.234+)
+        # Find the .map callback to get the requestedName and resolved variable names
+        pat_map = r'\.map\((\w)=>\{let (\w)=\w\.get\(\1\)'
+        map_match = re.search(pat_map, content)
+        if map_match:
+            req_var = map_match.group(1)  # requestedName (e.g. c)
+            res_var = map_match.group(2)  # resolved (e.g. l)
+            # Find: }}}const <u>=<l>?void 0:  (the didYouMean assignment after all lookups)
+            # We inject our Linux fallback before this const declaration.
+            anchor_pat = re.compile(
+                r'\}\}\}(const \w=' + re.escape(res_var) + r'\?void 0:)'
+            )
+            for anchor in anchor_pat.finditer(content, map_match.start()):
+                inject = (
+                    f'if(!{res_var}&&process.platform==="linux")'
+                    f'{{{res_var}={{bundleId:{req_var},displayName:{req_var},path:{req_var}}}}}'
+                )
+                # Insert after }}} and before const
+                insert_pos = anchor.start() + 3  # after }}}
+                content = content[:insert_pos] + inject + content[insert_pos:]
+                total_patched += 1
+                print(f'  [found] App resolution function: auto-resolve on Linux (variant B)')
+                break
 
     # Pattern 11: Pg() setIgnoreMouseEvents wrapper — skip on Linux
     # On macOS, Pg() sets setIgnoreMouseEvents(true) on all BrowserWindows during
@@ -240,13 +277,16 @@ def apply(content):
     # intercepting clicks. On Linux (especially Wayland), this causes severe
     # flickering and visual glitches because compositors handle this differently.
     # Fix: on Linux, skip the setIgnoreMouseEvents calls entirely.
+    # JS identifiers can start with $ so use [\w$] throughout
+    _id = r'[\w$]+'   # matches JS identifiers like $g, $en, qIe
+    _v = r'[\w$]'     # single-char JS identifier
     pattern_pg = (
-        r'async function ([\w$]+)\((\w)\)\{'
-        r'const (\w)=(\w+)\.BrowserWindow\.getAllWindows\(\)\.filter\((\w)=>!\5\.isDestroyed\(\)\);'
-        r'for\(const (\w) of \3\)\6\.setIgnoreMouseEvents\(!0\);'
-        r'await (\w+)\((\w+)\);'
+        r'async function (' + _id + r')\((' + _v + r')\)\{'
+        r'const (' + _v + r')=(' + _id + r')\.BrowserWindow\.getAllWindows\(\)\.filter\((' + _v + r')=>!\5\.isDestroyed\(\)\);'
+        r'for\(const (' + _v + r') of \3\)\6\.setIgnoreMouseEvents\(!0\);'
+        r'await (' + _id + r')\((' + _id + r')\);'
         r'try\{return await \2\(\)\}'
-        r'finally\{for\(const (\w) of \3\)!\9\.isDestroyed\(\)&&!(\w+)\.has\(\9\.id\)&&\9\.setIgnoreMouseEvents\(!1\)\}'
+        r'finally\{for\(const (' + _v + r') of \3\)!\9\.isDestroyed\(\)&&!(' + _id + r')\.has\(\9\.id\)&&\9\.setIgnoreMouseEvents\(!1\)\}'
         r'\}'
     )
     for match in reversed(list(re.finditer(pattern_pg, content))):
