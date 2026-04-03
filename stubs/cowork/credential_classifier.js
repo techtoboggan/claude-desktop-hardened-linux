@@ -44,11 +44,46 @@ const CREDENTIAL_PATTERNS = [
 ];
 
 /**
+ * Load additional credential patterns from user config.
+ * File: ~/.config/Claude/credential-patterns.json
+ * Format: { "patterns": ["regex1", "regex2"] }
+ */
+const MAX_PATTERN_LENGTH = 500;
+const MAX_USER_PATTERNS = 50;
+
+function loadUserPatterns() {
+  const path = require('path');
+  const fs = require('fs');
+  const os = require('os');
+  const configPath = path.join(
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+    'Claude', 'credential-patterns.json'
+  );
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(raw);
+    if (Array.isArray(config.patterns)) {
+      return config.patterns
+        .slice(0, MAX_USER_PATTERNS)
+        .filter(p => typeof p === 'string' && p.length <= MAX_PATTERN_LENGTH)
+        .map(p => { try { return new RegExp(p, 'g'); } catch (_) { return null; } })
+        .filter(Boolean);
+    }
+  } catch (_) {
+    // No user config or invalid — use built-in patterns only
+  }
+  return [];
+}
+
+const USER_PATTERNS = loadUserPatterns();
+const ALL_PATTERNS = [...CREDENTIAL_PATTERNS, ...USER_PATTERNS];
+
+/**
  * Check if a string contains potential credentials.
  */
 function containsCredentials(text) {
   if (!text || typeof text !== 'string') return false;
-  return CREDENTIAL_PATTERNS.some(pattern => {
+  return ALL_PATTERNS.some(pattern => {
     pattern.lastIndex = 0;  // Reset regex state
     return pattern.test(text);
   });
@@ -61,7 +96,7 @@ function redactForLogs(text) {
   if (!text || typeof text !== 'string') return text;
 
   let redacted = text;
-  for (const pattern of CREDENTIAL_PATTERNS) {
+  for (const pattern of ALL_PATTERNS) {
     pattern.lastIndex = 0;
     redacted = redacted.replace(pattern, '[REDACTED]');
   }

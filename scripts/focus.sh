@@ -17,12 +17,23 @@ set -uo pipefail
 
 APP_ID="claude-desktop-hardened"
 
-# Detect display server
-if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
-    DS="wayland"
-elif [ -n "${DISPLAY:-}" ]; then
-    DS="x11"
+# Detect display server via shared module or inline fallback
+SHARE_DIR="$(dirname "$0")"
+if [ -f "$SHARE_DIR/display-server.sh" ]; then
+    # shellcheck source=../lib/display-server.sh
+    . "$SHARE_DIR/display-server.sh"
+    DS=$(detect_display_server)
 else
+    if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+        DS="wayland"
+    elif [ -n "${DISPLAY:-}" ]; then
+        DS="x11"
+    else
+        DS="headless"
+    fi
+fi
+
+if [ "$DS" = "headless" ]; then
     echo "No display server detected" >&2
     exit 1
 fi

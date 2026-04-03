@@ -17,6 +17,11 @@ const { redactForLogs } = require('./credential_classifier');
 // Only search known system paths — no arbitrary PATH traversal
 const TOOL_SEARCH_PATHS = ['/usr/bin/', '/usr/local/bin/'];
 
+const DEBUG = !!process.env.COWORK_DEBUG;
+function debug(...args) {
+  if (DEBUG) console.log('[cowork-debug] [computer_use]', ...args);
+}
+
 /**
  * Detect the active display server.
  */
@@ -42,8 +47,11 @@ function findTool(name) {
     try {
       fs.accessSync(p, fs.constants.X_OK);
       return p;
-    } catch (_) {}
+    } catch (_) {
+      debug(`${name} not found at ${p}`);
+    }
   }
+  debug(`${name} not found in any search path`);
   return null;
 }
 
@@ -57,8 +65,8 @@ function logAction(action, details) {
     if (store) {
       store.append('system', 'computer_use', redactForLogs(`${action}: ${JSON.stringify(details)}`));
     }
-  } catch (_) {
-    // Transcript store may not be initialized yet
+  } catch (err) {
+    debug('logAction failed (transcript store may not be initialized):', err.message);
   }
 }
 
@@ -121,7 +129,9 @@ function getOpenWindowsWayland() {
         desktop: String(c.workspace?.id || 0),
         title: c.title || '',
       }));
-    } catch (_) {}
+    } catch (err) {
+      debug('hyprctl clients failed:', err.message);
+    }
   }
 
   // Sway / wlroots
@@ -130,7 +140,9 @@ function getOpenWindowsWayland() {
     try {
       const output = execFileSync(swaymsg, ['-t', 'get_tree'], { encoding: 'utf8' });
       return parseSway(output);
-    } catch (_) {}
+    } catch (err) {
+      debug('swaymsg get_tree failed:', err.message);
+    }
   }
 
   return [];
@@ -167,7 +179,8 @@ function getOpenWindowsX11() {
         title: parts.slice(3).join(' '),
       };
     });
-  } catch (_) {
+  } catch (err) {
+    debug('wmctrl -l failed:', err.message);
     return [];
   }
 }
@@ -259,14 +272,18 @@ function getDisplayInfo() {
     if (wlrRandr) {
       try {
         return execFileSync(wlrRandr, [], { encoding: 'utf8' });
-      } catch (_) {}
+      } catch (err) {
+        debug('wlr-randr failed:', err.message);
+      }
     }
   } else {
     const xrandr = findTool('xrandr');
     if (xrandr) {
       try {
         return execFileSync(xrandr, ['--current'], { encoding: 'utf8' });
-      } catch (_) {}
+      } catch (err) {
+        debug('xrandr --current failed:', err.message);
+      }
     }
   }
   return null;
@@ -291,7 +308,9 @@ function activateWindow(windowId) {
         execFileSync(hyprctl, ['dispatch', 'focuswindow', `address:${windowId}`]);
         logAction('activateWindow', { windowId, method: 'hyprctl' });
         return true;
-      } catch (_) {}
+      } catch (err) {
+        debug('hyprctl focuswindow failed:', err.message);
+      }
     }
 
     // Sway
@@ -301,7 +320,9 @@ function activateWindow(windowId) {
         execFileSync(swaymsg, ['[con_id=' + windowId + ']', 'focus']);
         logAction('activateWindow', { windowId, method: 'swaymsg' });
         return true;
-      } catch (_) {}
+      } catch (err) {
+        debug('swaymsg focus failed:', err.message);
+      }
     }
 
     console.warn('[cowork-linux] Cannot activate window: no supported Wayland compositor command found');
@@ -315,7 +336,9 @@ function activateWindow(windowId) {
       execFileSync(wmctrl, ['-i', '-a', windowId]);
       logAction('activateWindow', { windowId, method: 'wmctrl' });
       return true;
-    } catch (_) {}
+    } catch (err) {
+      debug('wmctrl activate failed:', err.message);
+    }
   }
 
   return false;
@@ -343,7 +366,9 @@ function activateClaudeWindow() {
           execFileSync(hyprctl, ['dispatch', 'focuswindow', `address:${claude.address}`]);
           return true;
         }
-      } catch (_) {}
+      } catch (err) {
+        debug('hyprctl activateClaudeWindow failed:', err.message);
+      }
     }
 
     const swaymsg = findTool('swaymsg');
@@ -351,7 +376,9 @@ function activateClaudeWindow() {
       try {
         execFileSync(swaymsg, [`[app_id=${appId}]`, 'focus']);
         return true;
-      } catch (_) {}
+      } catch (err) {
+        debug('swaymsg activateClaudeWindow failed:', err.message);
+      }
     }
 
     return false;
@@ -363,7 +390,9 @@ function activateClaudeWindow() {
     try {
       execFileSync(wmctrl, ['-x', '-a', appId]);
       return true;
-    } catch (_) {}
+    } catch (err) {
+      debug('wmctrl activateClaudeWindow failed:', err.message);
+    }
   }
 
   return false;
