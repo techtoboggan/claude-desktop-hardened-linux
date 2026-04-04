@@ -994,6 +994,34 @@ const moduleExport = {
               } catch (_) {}
             }
           }
+
+          // Add macOS app aliases so model requests for macOS-specific names
+          // (e.g. "Finder", "Safari") show meaningful Linux names in permission
+          // dialogs instead of the raw macOS names.
+          const fileManagerIds = ['nautilus', 'dolphin', 'thunar', 'nemo', 'pcmanfm', 'caja', 'krusader'];
+          const browserIds     = ['firefox', 'chromium', 'chrome', 'brave', 'epiphany', 'falkon', 'opera', 'vivaldi', 'zen'];
+          const fileManager = apps.find(a =>
+            fileManagerIds.some(n => a.bundleId.toLowerCase().includes(n) || a.path.toLowerCase().includes(n))
+          ) || { displayName: 'File Manager', path: 'xdg-open' };
+          const browser = apps.find(a =>
+            browserIds.some(n => a.bundleId.toLowerCase().includes(n) || a.path.toLowerCase().includes(n))
+          ) || { displayName: 'Web Browser', path: 'xdg-open' };
+
+          const macAliases = [
+            { bundleId: 'Finder',           target: fileManager },
+            { bundleId: 'com.apple.finder', target: fileManager },
+            { bundleId: 'File Explorer',    target: fileManager },
+            { bundleId: 'Safari',           target: browser     },
+            { bundleId: 'com.apple.Safari', target: browser     },
+            { bundleId: 'com.apple.Safari.WebApp.Default', target: browser },
+          ];
+          for (const { bundleId, target } of macAliases) {
+            if (!seen.has(bundleId)) {
+              seen.add(bundleId);
+              apps.push({ bundleId, displayName: target.displayName, path: target.path });
+            }
+          }
+
           return apps;
         },
         listRunning() {
