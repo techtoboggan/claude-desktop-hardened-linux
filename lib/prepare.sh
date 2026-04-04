@@ -104,18 +104,8 @@ SWIFTPKG
     mkdir -p app.asar.contents/resources/i18n/
     cp ../lib/net45/resources/*.json app.asar.contents/resources/i18n/
 
-    # cowork-plugin-shim.sh — expected by the plugin permission bridge.
-    # The upstream macOS build ships this as a native permission shim.
-    # On Linux there is no equivalent TCC/permission system, so we provide
-    # a no-op stub that exits cleanly. The bridge falls back gracefully.
-    cat > app.asar.contents/resources/cowork-plugin-shim.sh << 'SHIMEOF'
-#!/bin/sh
-# cowork-plugin-shim stub for Linux — no-op.
-# Plugin permissions on Linux are handled directly via Electron IPC.
-exit 0
-SHIMEOF
-    chmod 755 app.asar.contents/resources/cowork-plugin-shim.sh
-    log_ok "cowork-plugin-shim.sh stub installed"
+    # cowork-plugin-shim.sh is installed as a real filesystem file alongside
+    # app.asar in the install phase below (not inside the asar).
 
     # Patch window decorations for Linux CSD
     log_step "🔧" "Patching window decorations..."
@@ -564,6 +554,18 @@ CLIEOF
     # -----------------------------------------------------------------------
     cp app.asar "$INSTALL_DIR/lib/$PACKAGE_NAME/"
     cp -r app.asar.unpacked "$INSTALL_DIR/lib/$PACKAGE_NAME/"
+
+    # cowork-plugin-shim.sh — the cowork permission bridge expects this as a real
+    # file alongside app.asar (not inside the packed asar). On macOS this is a
+    # native TCC shim; on Linux it's a no-op stub.
+    cat > "$INSTALL_DIR/lib/$PACKAGE_NAME/cowork-plugin-shim.sh" << 'SHIMEOF'
+#!/bin/sh
+# cowork-plugin-shim stub for Linux — no-op.
+# Plugin permissions on Linux are handled directly via Electron IPC.
+exit 0
+SHIMEOF
+    chmod 755 "$INSTALL_DIR/lib/$PACKAGE_NAME/cowork-plugin-shim.sh"
+    log_ok "cowork-plugin-shim.sh stub installed"
 
     # Extract preload scripts to real filesystem so sandboxed Electron renderers
     # (Electron 35+ enables sandbox by default) can load them. Preloads inside
