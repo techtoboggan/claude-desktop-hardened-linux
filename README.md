@@ -278,6 +278,67 @@ When `CLAUDE_VERSION` changes on `main`, the release workflow:
 
 ---
 
+## Configuration reference
+
+These optional config files let you customize Cowork behavior. All paths follow the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/) — if `XDG_CONFIG_HOME` is set, it replaces `~/.config`.
+
+### Resource limits (`~/.config/Claude/cowork-limits.json`)
+
+Override the default systemd-run resource limits for sandboxed Cowork sessions:
+
+```json
+{
+  "memoryMax": "8G",
+  "cpuQuota": "400%",
+  "tasksMax": "1024"
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `memoryMax` | `4G` | Maximum memory (systemd format: `4G`, `512M`, etc.) |
+| `cpuQuota` | `200%` | CPU quota — `200%` means 2 cores |
+| `tasksMax` | `512` | Maximum number of processes/threads |
+
+Values must match the pattern `^\d+[GMKT%]?$`. Invalid entries are silently ignored and defaults are used.
+
+### Custom credential patterns (`~/.config/Claude/credential-patterns.json`)
+
+Add your own regex patterns for credential redaction on top of the built-in set:
+
+```json
+{
+  "patterns": [
+    "my-internal-token-[A-Za-z0-9]{32}",
+    "CORP_SECRET_[A-Z0-9]+"
+  ]
+}
+```
+
+Each pattern is compiled as a case-sensitive regex. Patterns longer than 500 characters are skipped. Malformed regexes are logged and ignored.
+
+### Debug logging (`COWORK_DEBUG` environment variable)
+
+Enable verbose debug logging for all Cowork subsystems (session orchestrator, Computer Use, credential classifier):
+
+```bash
+COWORK_DEBUG=1 claude-desktop-hardened
+```
+
+Debug output is prefixed with `[cowork-debug]` and written to stderr. Useful for diagnosing sandbox startup failures, tool resolution issues, or Computer Use problems.
+
+### Transcript and session logs
+
+Cowork session transcripts (with credential redaction applied) are stored at:
+
+```
+~/.local/state/claude-cowork/logs/
+```
+
+These contain a log of all Computer Use actions, session lifecycle events, and redacted command output. Transcripts are retained until manually deleted.
+
+---
+
 ## How it works
 
 Claude Desktop ships as a Windows `.exe` installer containing an Electron app. The build script:

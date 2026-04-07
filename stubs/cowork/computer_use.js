@@ -123,7 +123,13 @@ function getOpenWindowsWayland() {
   if (hyprctl) {
     try {
       const output = execFileSync(hyprctl, ['clients', '-j'], { encoding: 'utf8' });
-      const clients = JSON.parse(output);
+      let clients;
+      try {
+        clients = JSON.parse(output);
+      } catch (parseErr) {
+        debug('hyprctl returned invalid JSON:', parseErr.message);
+        clients = [];
+      }
       return clients.map(c => ({
         id: String(c.address || c.pid),
         desktop: String(c.workspace?.id || 0),
@@ -149,7 +155,13 @@ function getOpenWindowsWayland() {
 }
 
 function parseSway(jsonStr) {
-  const tree = JSON.parse(jsonStr);
+  let tree;
+  try {
+    tree = JSON.parse(jsonStr);
+  } catch (parseErr) {
+    debug('swaymsg returned invalid JSON:', parseErr.message);
+    return [];
+  }
   const windows = [];
   function walk(node) {
     if (node.type === 'con' && node.name) {
@@ -357,7 +369,14 @@ function activateClaudeWindow() {
     if (hyprctl) {
       try {
         // Find Claude window by class
-        const clients = JSON.parse(execFileSync(hyprctl, ['clients', '-j'], { encoding: 'utf8' }));
+        const output = execFileSync(hyprctl, ['clients', '-j'], { encoding: 'utf8' });
+        let clients;
+        try {
+          clients = JSON.parse(output);
+        } catch (parseErr) {
+          debug('hyprctl returned invalid JSON:', parseErr.message);
+          clients = [];
+        }
         const claude = clients.find(c =>
           (c.class || '').toLowerCase().includes('claude') ||
           (c.initialClass || '').toLowerCase().includes('claude')
