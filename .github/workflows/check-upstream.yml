@@ -193,14 +193,22 @@ jobs:
           # Check if an issue already exists for this version
           EXISTING=$(gh issue list --search "Build failure: Claude Desktop ${VERSION}" --state open --json number --jq '.[0].number' 2>/dev/null)
           if [ -n "$EXISTING" ]; then
-            echo "Issue #${EXISTING} already exists for ${VERSION}, adding comment"
+            # Count existing comments to implement backoff — stop commenting after 6 retries
+            COMMENT_COUNT=$(gh issue view "$EXISTING" --json comments --jq '.comments | length' 2>/dev/null || echo 0)
+            if [ "$COMMENT_COUNT" -ge 6 ]; then
+              echo "Issue #${EXISTING} already has ${COMMENT_COUNT} retry comments — suppressing further updates to avoid spam"
+              exit 0
+            fi
+            echo "Issue #${EXISTING} already exists for ${VERSION}, adding comment (${COMMENT_COUNT}/6)"
             gh issue comment "$EXISTING" --body "Retry failed at $(date -u +%Y-%m-%dT%H:%M:%SZ).
 
           **Build:** ${BUILD} | **Patches:** ${PATCHES} | **Electron:** ${ELECTRON}
 
           \`\`\`
           ${FAILURES}
-          \`\`\`"
+          \`\`\`
+
+          _Retry ${COMMENT_COUNT}/6 — updates will stop after 6 retries to avoid noise._"
             exit 0
           fi
 
