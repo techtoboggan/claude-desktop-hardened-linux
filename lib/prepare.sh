@@ -138,23 +138,6 @@ const _iconFull=_cNI.createFromPath(_iconPath);
 const _iconSmall=_iconFull.isEmpty()?_iconFull:_iconFull.resize({width:48,height:48});
 const _iconDataUrl=_iconSmall.isEmpty()?null:_iconSmall.toDataURL();
 
-// IPC handler for our DOM-injected window control buttons (minimize/maximize/close).
-// These buttons live in the app's DOM instead of Electron's titleBarOverlay so they
-// don't conflict with panel header controls (e.g. the plan panel's own buttons).
-if(process.platform==="linux"){
-  const _ipcMain=require("electron").ipcMain;
-  if(!_ipcMain.eventNames().includes("_cld_win")){
-    _ipcMain.on("_cld_win",(_ev,action)=>{
-      const _bw=require("electron").BrowserWindow;
-      const _fw=_bw.getFocusedWindow()||(_bw.getAllWindows()[0]||null);
-      if(!_fw)return;
-      if(action==="minimize")_fw.minimize();
-      else if(action==="maximize")_fw.isMaximized()?_fw.unmaximize():_fw.maximize();
-      else if(action==="close")_fw.close();
-    });
-  }
-}
-
 // MODULE._LOAD PROXY: intercept require('electron') to fix Tray singleton
 // and redirect BrowserWindow preload paths from asar VFS to real filesystem.
 if(process.platform==="linux"){
@@ -419,13 +402,9 @@ _capp.on("browser-window-created",(e,w)=>{
 
   if(process.platform!=="linux"||!_iconDataUrl)return;
 
-  // CSS: fixed icon top-left (draggable) + window control buttons after it (left side)
-  // + thin drag edge spanning the rest of the top edge.
-  //
-  // Window controls are on the LEFT (after the Claude icon) so they never conflict
-  // with right-side panel controls like the plan panel's own header buttons.
-  // We do NOT use Electron's titleBarOverlay — it draws an invisible compositor
-  // layer above all web content that blocks clicks on plan panel buttons.
+  // CSS: fixed draggable icon wrapper top-left, 42x44px matching titleBarOverlay height.
+  // Also mark all interactive elements as no-drag so the titleBarOverlay drag region
+  // doesn't swallow click events on buttons/tabs (e.g. the Chat/Cowork/Code toggle).
   const _css=[
     "#_cld_icon{",
       "position:fixed;top:0;left:0;",
@@ -441,36 +420,10 @@ _capp.on("browser-window-created",(e,w)=>{
       "object-fit:contain;",
       "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
     "}",
-    // Window control buttons: minimize, maximize, close — positioned immediately
-    // right of the Claude icon (left:42px). Each button is 30px wide.
-    "#_cld_wctls{",
-      "position:fixed;top:0;left:42px;",
-      "height:44px;",
-      "display:flex;align-items:center;",
-      "z-index:2147483647;",
-      "-webkit-app-region:no-drag !important;",
-      "user-select:none;",
-    "}",
-    "#_cld_wctls button{",
-      "width:30px;height:44px;",
-      "border:none;background:transparent;",
-      "color:rgba(255,255,255,0.65);",
-      "font-size:13px;line-height:1;",
-      "cursor:pointer;",
-      "display:flex;align-items:center;justify-content:center;",
-      "-webkit-app-region:no-drag !important;",
-      "transition:background 0.1s,color 0.1s;",
-    "}",
-    "#_cld_wctls button:hover{",
-      "background:rgba(255,255,255,0.12);color:rgba(255,255,255,0.9);",
-    "}",
-    "#_cld_wctls .cld-close:hover{",
-      "background:rgba(196,43,28,0.75);color:#fff;",
-    "}",
-    // Thin drag edge spanning top of window from after the buttons to the right edge.
-    // height:8px keeps it above interactive elements but allows window dragging.
+    // Thin drag edge along the very top of the window — above all buttons/tabs.
+    // Users can grab this strip to drag the window, like a standard Linux title bar.
     "#_cld_drag_edge{",
-      "position:fixed;top:0;left:132px;right:0;",
+      "position:fixed;top:0;left:42px;right:0;",
       "height:8px;",
       "z-index:2147483647;",
       "-webkit-app-region:drag !important;",
@@ -478,39 +431,17 @@ _capp.on("browser-window-created",(e,w)=>{
     "}",
   ].join("");
 
-  // JS: inject icon, window control buttons, and drag edge.
-  // Shift the first top-left nav button container right to make room for the icon.
+  // JS: wait for first top-left nav button, shift its container right, append icon.
   const _js=[
     "(function(){",
       "if(document.getElementById('_cld_icon'))return;",
-      // Claude icon
       "const el=document.createElement('div');",
       "el.id='_cld_icon';",
       "const img=document.createElement('img');",
       "img.src='",_iconDataUrl,"';",
       "img.alt='Claude';",
       "el.appendChild(img);",
-      // Window control buttons (min / max / close) — left side, no titleBarOverlay
-      "if(!document.getElementById('_cld_wctls')){",
-        "const wb=document.createElement('div');",
-        "wb.id='_cld_wctls';",
-        "const btns=[",
-          "{id:'cld-min',label:'\\u2212',title:'Minimize',action:'minimize'},",
-          "{id:'cld-max',label:'\\u25a1',title:'Maximize',action:'maximize'},",
-          "{id:'cld-cls',label:'\\u00d7',title:'Close',   action:'close',cls:'cld-close'},",
-        "];",
-        "btns.forEach(function(b){",
-          "const btn=document.createElement('button');",
-          "btn.id=b.id;btn.title=b.title;btn.textContent=b.label;",
-          "if(b.cls)btn.className=b.cls;",
-          "btn.addEventListener('click',function(){",
-            "if(window._cldWin)window._cldWin[b.action]();",
-          "});",
-          "wb.appendChild(btn);",
-        "});",
-        "document.documentElement.appendChild(wb);",
-      "}",
-      // Drag edge
+      // Also inject the drag edge strip
       "if(!document.getElementById('_cld_drag_edge')){",
         "const edge=document.createElement('div');",
         "edge.id='_cld_drag_edge';",
@@ -658,10 +589,7 @@ SHIMEOF
 import sys, re
 path = sys.argv[1]
 content = open(path).read()
-
-# Patch 1: wrap getInitialLocale() in try-catch so the preload survives the
-# initial file:// page load (eipc origin validator rejects file:// and crashes
-# the preload before window.process / window.initialLocale are exposed).
+# Match: const{messages:VAR1,locale:VAR2}=IFACE.getInitialLocale();
 m = re.search(r'const\{messages:(\w+),locale:(\w+)\}=(\w+)\.getInitialLocale\(\)', content)
 if m:
     v1, v2, iface = m.group(1), m.group(2), m.group(3)
@@ -669,32 +597,10 @@ if m:
     new = (f'let {v1}=[],{v2}="en-US";'
            f'try{{const _r={iface}.getInitialLocale();{v1}=_r.messages;{v2}=_r.locale;}}catch(_e){{}}')
     content = content.replace(old, new, 1)
+    open(path, 'w').write(content)
     print('  [ok] Patched mainWindow.js: getInitialLocale() wrapped in try-catch')
 else:
     print('  [warn] mainWindow.js: getInitialLocale() pattern not found — skipping')
-
-# Patch 2: expose window._cldWin with minimize/maximize/close so our injected
-# DOM window control buttons can control the window without titleBarOverlay.
-# Prepend to the preload so it runs before any other code.
-win_ctrl = (
-    ';(function(){'
-    'try{'
-    'var _r=require("electron");'
-    '_r.contextBridge.exposeInMainWorld("_cldWin",{'
-      'minimize:function(){_r.ipcRenderer.send("_cld_win","minimize");},'
-      'maximize:function(){_r.ipcRenderer.send("_cld_win","maximize");},'
-      'close:function(){_r.ipcRenderer.send("_cld_win","close");}'
-    '});'
-    '}catch(_e){}'
-    '})();\n'
-)
-if '_cldWin' not in content:
-    content = win_ctrl + content
-    print('  [ok] Patched mainWindow.js: window._cldWin IPC exposed')
-else:
-    print('  [skip] mainWindow.js: window._cldWin already present')
-
-open(path, 'w').write(content)
 PYEOF
     fi
 
