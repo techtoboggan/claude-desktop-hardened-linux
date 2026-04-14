@@ -4,18 +4,11 @@
  *
  * Usage: node patch-window.js <path-to-extracted-asar-dir>
  *
- * Replaces macOS-specific title bar settings with Linux frameless CSD:
- *   titleBarStyle:"hidden" + titleBarOverlay:false
+ * Replaces macOS-specific title bar settings with Electron 28+ Linux CSD:
+ *   titleBarStyle:"hidden" + titleBarOverlay:{color:"#00000000",...}
  *
- * We do NOT use Electron's titleBarOverlay on Linux because it draws invisible
- * window controls at a compositor layer above all web content. When the plan
- * panel (or other sidebar panels) have their own header buttons at the top-right,
- * those buttons are click-trapped behind the overlay — users can see them but
- * can't click them.
- *
- * Instead, we inject our own window control buttons (min/max/close) into the
- * app's DOM at z-index max, positioned on the LEFT side next to the Claude icon
- * so they never conflict with right-side panel controls.
+ * This lets Electron draw native close/min/max buttons inside the app's
+ * own content area (just like Firefox on Linux), giving a clean merged look.
  */
 
 const fs = require('fs');
@@ -48,15 +41,13 @@ function patch(name, fn) {
 
 console.log('Patching window decorations for Linux CSD...');
 
-// Disable titleBarOverlay — on Linux this draws invisible Electron window controls
-// at a compositor layer above all web content, blocking clicks on plan panel buttons
-// and other sidebar header controls at the top-right. Our injected DOM buttons
-// (added by the startup patch in prepare.sh) replace this functionality.
-patch('titleBarOverlay → false (DOM buttons used instead)', () => {
+// Replace any existing titleBarOverlay value (inline object or variable reference)
+// with the transparent overlay that lets app content show behind native buttons.
+patch('titleBarOverlay → transparent CSD', () => {
   const before = code.length;
   code = code.replace(
     /titleBarOverlay:(?:\{[^}]*\}|\w+)/g,
-    'titleBarOverlay:false'
+    'titleBarOverlay:{color:"#00000000",symbolColor:"#ffffff",height:44}'
   );
   if (code.length === before) return false;
 });
