@@ -479,51 +479,33 @@ _capp.on("browser-window-created",(e,w)=>{
   w.webContents.on("dom-ready",inject);
   w.webContents.on("did-navigate-in-page",inject);
 
-  // Overlay toggle: temporarily hide the titleBarOverlay when interactive UI
-  // elements (buttons, links) appear underneath it. This lets panel header
-  // controls (e.g. plan mode's own close/maximize/minimize) remain clickable.
-  // When those elements disappear, the overlay is restored.
+  // Overlay drawer: the titleBarOverlay starts at a small height (just the top
+  // edge of the window controls peeking out). When the user moves their mouse
+  // into the top-right corner, it expands to full height so the buttons are
+  // fully clickable. When the mouse leaves, it collapses back.
   //
-  // The overlay zone is the top-right ~135×44px where Electron draws invisible
-  // window control buttons. We sample several points in that zone across all
-  // child WebContentsViews and toggle via setTitleBarOverlay().
-  let _ovOn=true;
-  const _ovCheck=`(function(){`+
-    `var ww=window.innerWidth,found=false;`+
-    `var pts=[[ww-120,22],[ww-80,22],[ww-40,22],[ww-10,22]];`+
-    `for(var i=0;i<pts.length;i++){`+
-      `var els=document.elementsFromPoint(pts[i][0],pts[i][1]);`+
-      `for(var j=0;j<els.length;j++){`+
-        `var e=els[j],t=e.tagName;`+
-        `if(t==="BUTTON"||t==="A"||t==="INPUT"||t==="SELECT"`+
-          `||e.getAttribute("role")==="button"`+
-          `||e.getAttribute("tabindex")>=0)return true;`+
-      `}`+
-    `}`+
-    `return false;`+
-  `})()`;
-  const _ovTick=()=>{
-    if(w.isDestroyed())return;
+  // This prevents the overlay from blocking panel header controls (e.g. plan
+  // mode buttons) while still keeping window controls accessible on hover.
+  const _ovCollapsed=10,_ovExpanded=44;
+  let _ovIsUp=false;
+  try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_ovCollapsed});}catch(e){}
+  const _scr=require("electron").screen;
+  const _ovHover=()=>{
+    if(w.isDestroyed()||w.isMinimized()||!w.isVisible())return;
     try{
-      const cv=w.contentView;
-      if(!cv||!cv.children||cv.children.length===0)return;
-      const checks=cv.children
-        .filter(v=>v&&v.webContents&&!v.webContents.isDestroyed())
-        .map(v=>v.webContents.executeJavaScript(_ovCheck).catch(()=>false));
-      Promise.all(checks).then(results=>{
-        if(w.isDestroyed())return;
-        const hit=results.some(r=>r);
-        if(hit&&_ovOn){
-          try{w.setTitleBarOverlay({height:0});}catch(e){}
-          _ovOn=false;
-        }else if(!hit&&!_ovOn){
-          try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:44});}catch(e){}
-          _ovOn=true;
-        }
-      }).catch(()=>{});
+      const cur=_scr.getCursorScreenPoint();
+      const b=w.getBounds();
+      const inZone=cur.x>b.x+b.width-150&&cur.y>=b.y&&cur.y<b.y+50;
+      if(inZone&&!_ovIsUp){
+        w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_ovExpanded});
+        _ovIsUp=true;
+      }else if(!inZone&&_ovIsUp){
+        w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_ovCollapsed});
+        _ovIsUp=false;
+      }
     }catch(e){}
   };
-  const _ovTimer=setInterval(_ovTick,500);
+  const _ovTimer=setInterval(_ovHover,100);
   w.on("closed",()=>clearInterval(_ovTimer));
 });
 PREPENDJS

@@ -47,7 +47,7 @@ patch('titleBarOverlay → transparent CSD', () => {
   const before = code.length;
   code = code.replace(
     /titleBarOverlay:(?:\{[^}]*\}|\w+)/g,
-    'titleBarOverlay:{color:"#00000000",symbolColor:"#ffffff",height:44}'
+    'titleBarOverlay:{color:"#00000000",symbolColor:"#ffffff",height:10}'
   );
   if (code.length === before) return false;
 });
