@@ -392,6 +392,16 @@ const _injectedCss=
     "box-sizing:border-box !important;"+
     "overflow:hidden !important;"+
   "}"+
+  // React roots commonly declare height:100vh, which is 40px too tall in
+  // our layout and would get clipped at the bottom — hiding the mode/model
+  // selector. Cap direct body children to 100% so they fit inside body
+  // (icon + drag-edge are appended to documentElement, not body, so they
+  // aren't affected by this selector).
+  "body>*{"+
+    "height:100% !important;"+
+    "max-height:100% !important;"+
+    "min-height:0 !important;"+
+  "}"+
   "body,body *{-webkit-app-region:no-drag !important;}";
 const _bgSyncJs="(function(){"+
   "if(window.__cdh_bg_synced)return;"+
