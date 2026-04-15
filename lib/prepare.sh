@@ -551,9 +551,13 @@ _capp.on("browser-window-created",(e,w)=>{
   // web-contents-created handler above) signals state changes via console
   // sentinels — event-driven, near-zero idle cost.
   //
-  // Safety net: 1Hz poll per window. Catches cases where renderer injection
-  // failed, a page reloaded mid-hover, or console messages were dropped.
-  // 10x less frequent than the previous 10Hz poll — effectively negligible.
+  // Safety net: 4Hz poll per window. Catches cases the renderer can't see —
+  // specifically when the cursor is *inside* the titleBarOverlay zone (the
+  // Chromium-drawn overlay layer), because mousemove events in that region
+  // don't reach the web content. Examples: cursor materializing on the
+  // buttons via window switch / tray click, or cursor that was already
+  // there when the window gained focus. 4Hz = 250ms worst-case latency
+  // (~instant to users); still 60% less work than the old 10Hz poll.
   w.__cdhOv={up:false};
   _setWindowOv(w,false);// ensure collapsed initial state
   const _ovVerify=()=>{
@@ -567,7 +571,7 @@ _capp.on("browser-window-created",(e,w)=>{
       _setWindowOv(w,inZone);
     }catch(e){}
   };
-  const _ovTimer=setInterval(_ovVerify,1000);
+  const _ovTimer=setInterval(_ovVerify,250);
   w.on("blur",()=>_setWindowOv(w,false));
   w.on("closed",()=>clearInterval(_ovTimer));
 });
