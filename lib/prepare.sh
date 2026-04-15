@@ -371,7 +371,27 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
 // it picks up Claude's dark theme automatically.
 const _titlebarH=40;
 const _injectedCss=
-  "html{padding-top:"+_titlebarH+"px !important;box-sizing:border-box !important;}"+
+  // Lock html to exactly viewport height, with the 40px reservation living
+  // INSIDE that height via border-box. overflow:hidden keeps any oversized
+  // child from forcing a scrollbar on the outer document.
+  "html{"+
+    "height:100vh !important;"+
+    "max-height:100vh !important;"+
+    "padding-top:"+_titlebarH+"px !important;"+
+    "box-sizing:border-box !important;"+
+    "overflow:hidden !important;"+
+    "margin:0 !important;"+
+  "}"+
+  // Body fills html's content area (100vh - 40px). Forcing max-height and
+  // overflow:hidden on body stops fixed-height children (e.g. `height:100vh`
+  // on a React root) from spilling past the bottom edge.
+  "body{"+
+    "height:100% !important;"+
+    "max-height:100% !important;"+
+    "margin:0 !important;"+
+    "box-sizing:border-box !important;"+
+    "overflow:hidden !important;"+
+  "}"+
   "body,body *{-webkit-app-region:no-drag !important;}";
 const _bgSyncJs="(function(){"+
   "if(window.__cdh_bg_synced)return;"+
