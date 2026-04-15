@@ -355,80 +355,22 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
 
 // ===== Permanent title bar layout =====
 // The titleBarOverlay draws native window controls (min/max/close) in a
-// 40px-tall band across the top-right of the window. We can't shrink it
-// without losing the buttons, and we can't make it translucent without
-// losing the click region — so instead we push the entire web content
-// down by 40px so nothing in the Claude UI sits behind the buttons.
-//
-// CSS injected into every webContents:
-//   - html { padding-top: 40px } reserves space at the top
-//   - box-sizing keeps the layout calc honest
-//   - body, body * no-drag so buttons inside the page stay clickable in
-//     the parts of the title bar zone that are draggable
-//
-// JS sets html background to match body's computed background so the
-// empty 40px strip on the LEFT of the title bar doesn't flash white —
-// it picks up Claude's dark theme automatically.
+// 40px-tall band across the top-right of the window. The scripts/patch-
+// window.js asar patch shifts the main Claude WebContentsView down by
+// 40px natively, so Claude's layout uses `100vh = windowHeight - 40`
+// inside its own view and nothing is clipped, overflows, or needs CSS
+// hacks to fit. All we need to do here is mark interactive elements
+// as no-drag so they stay clickable in the draggable title bar zone.
 const _titlebarH=40;
-const _injectedCss=
-  // Lock html to exactly viewport height, with the 40px reservation living
-  // INSIDE that height via border-box. overflow:hidden keeps any oversized
-  // child from forcing a scrollbar on the outer document.
-  "html{"+
-    "height:100vh !important;"+
-    "max-height:100vh !important;"+
-    "padding-top:"+_titlebarH+"px !important;"+
-    "box-sizing:border-box !important;"+
-    "overflow:hidden !important;"+
-    "margin:0 !important;"+
-  "}"+
-  // Body fills html's content area (100vh - 40px). Forcing max-height and
-  // overflow:hidden on body stops fixed-height children (e.g. `height:100vh`
-  // on a React root) from spilling past the bottom edge.
-  "body{"+
-    "height:100% !important;"+
-    "max-height:100% !important;"+
-    "margin:0 !important;"+
-    "box-sizing:border-box !important;"+
-    "overflow:hidden !important;"+
-  "}"+
-  // React roots commonly declare height:100vh, which is 40px too tall in
-  // our layout and would get clipped at the bottom — hiding the mode/model
-  // selector. Cap direct body children to 100% so they fit inside body
-  // (icon + drag-edge are appended to documentElement, not body, so they
-  // aren't affected by this selector).
-  "body>*{"+
-    "height:100% !important;"+
-    "max-height:100% !important;"+
-    "min-height:0 !important;"+
-  "}"+
-  "body,body *{-webkit-app-region:no-drag !important;}";
-const _bgSyncJs="(function(){"+
-  "if(window.__cdh_bg_synced)return;"+
-  "window.__cdh_bg_synced=true;"+
-  "const _sync=function(){try{"+
-    "const _b=getComputedStyle(document.body).backgroundColor;"+
-    "if(_b&&_b!=='rgba(0, 0, 0, 0)'&&_b!=='transparent'){"+
-      "document.documentElement.style.background=_b;"+
-    "}"+
-  "}catch(_){}};"+
-  "_sync();"+
-  "setTimeout(_sync,500);"+
-  "setTimeout(_sync,2000);"+
-  // Re-sync if the theme changes (body class/style mutations).
-  "try{new MutationObserver(_sync).observe(document.body,{attributes:true,attributeFilter:['class','style']});}catch(_){}"+
-"})();";
+const _injectedCss="body,body *{-webkit-app-region:no-drag !important;}";
 
-// Inject reservation CSS + bg sync into ALL webContents (BrowserWindows
-// AND WebContentsViews). The main Claude UI renders in a WebContentsView
+// Inject no-drag CSS into ALL webContents (BrowserWindows AND
+// WebContentsViews). The main Claude UI renders in a WebContentsView
 // (not the BrowserWindow's own webContents), so browser-window-created
 // alone misses it.
 if(process.platform==="linux"){
   _capp.on("web-contents-created",(e,wc)=>{
-    const _apply=()=>{
-      wc.insertCSS(_injectedCss).catch(()=>{});
-      wc.executeJavaScript(_bgSyncJs).catch(()=>{});
-    };
+    const _apply=()=>{wc.insertCSS(_injectedCss).catch(()=>{});};
     wc.on("dom-ready",_apply);
     wc.on("did-navigate-in-page",_apply);
   });
