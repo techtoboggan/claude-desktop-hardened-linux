@@ -353,14 +353,78 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
   };
 }
 
-// Inject no-drag CSS into ALL webContents (BrowserWindows AND WebContentsViews).
-// The main Claude UI renders in a WebContentsView (not the BrowserWindow's own
-// webContents), so browser-window-created alone misses it.
+// ===== titleBarOverlay drawer-hover helpers =====
+// Shared state + helpers for the event-driven drawer overlay. The overlay
+// sits at 10px by default (just the top edge of window controls peeking out)
+// and expands to 44px when the cursor enters the top-right hover zone.
+//
+// Each managed BrowserWindow gets a `__cdhOv={up:false}` tag so _setWindowOv
+// can idempotently update state.
+const _ovCollapsed=10,_ovExpanded=44;
+const _setWindowOv=(w,up)=>{
+  if(!w||w.isDestroyed()||!w.__cdhOv)return;
+  if(w.__cdhOv.up===up)return;
+  try{
+    w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:up?_ovExpanded:_ovCollapsed});
+    w.__cdhOv.up=up;
+  }catch(e){}
+};
+const _windowUnderCursor=()=>{
+  try{
+    const{screen:_scrH,BrowserWindow:_bwH}=require("electron");
+    const cur=_scrH.getCursorScreenPoint();
+    for(const win of _bwH.getAllWindows()){
+      if(win.isDestroyed()||!win.__cdhOv)continue;
+      const b=win.getBounds();
+      if(cur.x>=b.x&&cur.x<b.x+b.width&&cur.y>=b.y&&cur.y<b.y+b.height){
+        return{win,cur,b};
+      }
+    }
+  }catch(e){}
+  return null;
+};
+// Renderer-side mousemove listener. Signals state changes via console.log
+// sentinels — cheapest cross-boundary bridge that needs no preload/IPC and
+// works under contextIsolation. Guarded with __cdh_hover_installed so repeat
+// injections on did-navigate-in-page are idempotent.
+const _ovHoverJs="(function(){"+
+  "if(window.__cdh_hover_installed)return;"+
+  "window.__cdh_hover_installed=true;"+
+  "let _h=false;"+
+  "const _chk=function(x,y){"+
+    "const inZ=x>window.innerWidth-150&&y>=0&&y<50;"+
+    "if(inZ!==_h){_h=inZ;console.log(inZ?'__CDH_HOVER_IN__':'__CDH_HOVER_OUT__');}"+
+  "};"+
+  "document.addEventListener('mousemove',function(e){_chk(e.clientX,e.clientY);},{passive:true,capture:true});"+
+  "document.addEventListener('mouseleave',function(){if(_h){_h=false;console.log('__CDH_HOVER_OUT__');}},{passive:true});"+
+  "window.addEventListener('blur',function(){if(_h){_h=false;console.log('__CDH_HOVER_OUT__');}});"+
+"})();";
+
+// Inject no-drag CSS + hover detector into ALL webContents (BrowserWindows
+// AND WebContentsViews). The main Claude UI renders in a WebContentsView
+// (not the BrowserWindow's own webContents), so browser-window-created alone
+// misses it.
 if(process.platform==="linux"){
   _capp.on("web-contents-created",(e,wc)=>{
     const _noDrag="body,body *{-webkit-app-region:no-drag !important;}";
-    wc.on("dom-ready",()=>{wc.insertCSS(_noDrag).catch(()=>{});});
-    wc.on("did-navigate-in-page",()=>{wc.insertCSS(_noDrag).catch(()=>{});});
+    const _apply=()=>{
+      wc.insertCSS(_noDrag).catch(()=>{});
+      wc.executeJavaScript(_ovHoverJs).catch(()=>{});
+    };
+    wc.on("dom-ready",_apply);
+    wc.on("did-navigate-in-page",_apply);
+    // Route hover sentinels to whichever window contains the cursor.
+    // Handles both Electron signatures:
+    //   old (event,level,message,line,sourceId)
+    //   new (event) where event.message is the message
+    wc.on("console-message",(...args)=>{
+      const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
+      if(msg!=="__CDH_HOVER_IN__"&&msg!=="__CDH_HOVER_OUT__")return;
+      const hit=_windowUnderCursor();
+      if(!hit)return;
+      const inZone=hit.cur.x>hit.b.x+hit.b.width-150&&hit.cur.y<hit.b.y+50;
+      _setWindowOv(hit.win,inZone);
+    });
   });
 }
 
@@ -479,33 +543,32 @@ _capp.on("browser-window-created",(e,w)=>{
   w.webContents.on("dom-ready",inject);
   w.webContents.on("did-navigate-in-page",inject);
 
-  // Overlay drawer: the titleBarOverlay starts at a small height (just the top
-  // edge of the window controls peeking out). When the user moves their mouse
-  // into the top-right corner, it expands to full height so the buttons are
-  // fully clickable. When the mouse leaves, it collapses back.
+  // Overlay drawer: titleBarOverlay starts collapsed (10px — top edge of
+  // window controls peeking out). Expands to full height (44px) when the
+  // cursor enters the top-right hover zone; collapses when it leaves.
   //
-  // This prevents the overlay from blocking panel header controls (e.g. plan
-  // mode buttons) while still keeping window controls accessible on hover.
-  const _ovCollapsed=10,_ovExpanded=44;
-  let _ovIsUp=false;
-  try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_ovCollapsed});}catch(e){}
-  const _scr=require("electron").screen;
-  const _ovHover=()=>{
+  // Primary path: renderer-injected mousemove listener (installed by the
+  // web-contents-created handler above) signals state changes via console
+  // sentinels — event-driven, near-zero idle cost.
+  //
+  // Safety net: 1Hz poll per window. Catches cases where renderer injection
+  // failed, a page reloaded mid-hover, or console messages were dropped.
+  // 10x less frequent than the previous 10Hz poll — effectively negligible.
+  w.__cdhOv={up:false};
+  _setWindowOv(w,false);// ensure collapsed initial state
+  const _ovVerify=()=>{
     if(w.isDestroyed()||w.isMinimized()||!w.isVisible())return;
     try{
-      const cur=_scr.getCursorScreenPoint();
+      const cur=require("electron").screen.getCursorScreenPoint();
       const b=w.getBounds();
-      const inZone=cur.x>b.x+b.width-150&&cur.y>=b.y&&cur.y<b.y+50;
-      if(inZone&&!_ovIsUp){
-        w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_ovExpanded});
-        _ovIsUp=true;
-      }else if(!inZone&&_ovIsUp){
-        w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_ovCollapsed});
-        _ovIsUp=false;
-      }
+      const curIn=cur.x>=b.x&&cur.x<b.x+b.width&&cur.y>=b.y&&cur.y<b.y+b.height;
+      if(!curIn){_setWindowOv(w,false);return;}
+      const inZone=cur.x>b.x+b.width-150&&cur.y<b.y+50;
+      _setWindowOv(w,inZone);
     }catch(e){}
   };
-  const _ovTimer=setInterval(_ovHover,100);
+  const _ovTimer=setInterval(_ovVerify,1000);
+  w.on("blur",()=>_setWindowOv(w,false));
   w.on("closed",()=>clearInterval(_ovTimer));
 });
 PREPENDJS
@@ -708,11 +771,20 @@ export CLAUDE_SHARE_DIR="${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened"
 # xdg-desktop-portal identifies the app as "claude-desktop-hardened"
 # (instead of "org.chromium.Chromium"). This fixes the GlobalShortcuts
 # portal registration name in KDE System Settings and other portal interactions.
+# GPU acceleration hints. Chromium gracefully falls back to software paths if
+# the GPU/driver doesn't support these features, so they're safe by default.
+# Set CLAUDE_DISABLE_GPU_EXTRAS=1 to skip them if you hit buggy driver behavior.
+GPU_EXTRAS=""
+if [ -z "\$CLAUDE_DISABLE_GPU_EXTRAS" ]; then
+    GPU_EXTRAS="--enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist"
+fi
+
 ELECTRON_ARGS="\\
     --class=claude-desktop-hardened \\
     --name=claude-desktop-hardened \\
     --ozone-platform-hint=auto \\
     --enable-features=GlobalShortcutsPortal \\
+    \$GPU_EXTRAS \\
     --enable-logging=file \\
     --log-file=\$LOG_FILE \\
     --log-level=INFO \\
