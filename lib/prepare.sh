@@ -353,78 +353,54 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
   };
 }
 
-// ===== titleBarOverlay drawer-hover helpers =====
-// Shared state + helpers for the event-driven drawer overlay. The overlay
-// sits at 10px by default (just the top edge of window controls peeking out)
-// and expands to 44px when the cursor enters the top-right hover zone.
+// ===== Permanent title bar layout =====
+// The titleBarOverlay draws native window controls (min/max/close) in a
+// 40px-tall band across the top-right of the window. We can't shrink it
+// without losing the buttons, and we can't make it translucent without
+// losing the click region — so instead we push the entire web content
+// down by 40px so nothing in the Claude UI sits behind the buttons.
 //
-// Each managed BrowserWindow gets a `__cdhOv={up:false}` tag so _setWindowOv
-// can idempotently update state.
-const _ovCollapsed=10,_ovExpanded=44;
-const _setWindowOv=(w,up)=>{
-  if(!w||w.isDestroyed()||!w.__cdhOv)return;
-  if(w.__cdhOv.up===up)return;
-  try{
-    w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:up?_ovExpanded:_ovCollapsed});
-    w.__cdhOv.up=up;
-  }catch(e){}
-};
-const _windowUnderCursor=()=>{
-  try{
-    const{screen:_scrH,BrowserWindow:_bwH}=require("electron");
-    const cur=_scrH.getCursorScreenPoint();
-    for(const win of _bwH.getAllWindows()){
-      if(win.isDestroyed()||!win.__cdhOv)continue;
-      const b=win.getBounds();
-      if(cur.x>=b.x&&cur.x<b.x+b.width&&cur.y>=b.y&&cur.y<b.y+b.height){
-        return{win,cur,b};
-      }
-    }
-  }catch(e){}
-  return null;
-};
-// Renderer-side mousemove listener. Signals state changes via console.log
-// sentinels — cheapest cross-boundary bridge that needs no preload/IPC and
-// works under contextIsolation. Guarded with __cdh_hover_installed so repeat
-// injections on did-navigate-in-page are idempotent.
-const _ovHoverJs="(function(){"+
-  "if(window.__cdh_hover_installed)return;"+
-  "window.__cdh_hover_installed=true;"+
-  "let _h=false;"+
-  "const _chk=function(x,y){"+
-    "const inZ=x>window.innerWidth-150&&y>=0&&y<50;"+
-    "if(inZ!==_h){_h=inZ;console.log(inZ?'__CDH_HOVER_IN__':'__CDH_HOVER_OUT__');}"+
-  "};"+
-  "document.addEventListener('mousemove',function(e){_chk(e.clientX,e.clientY);},{passive:true,capture:true});"+
-  "document.addEventListener('mouseleave',function(){if(_h){_h=false;console.log('__CDH_HOVER_OUT__');}},{passive:true});"+
-  "window.addEventListener('blur',function(){if(_h){_h=false;console.log('__CDH_HOVER_OUT__');}});"+
+// CSS injected into every webContents:
+//   - html { padding-top: 40px } reserves space at the top
+//   - box-sizing keeps the layout calc honest
+//   - body, body * no-drag so buttons inside the page stay clickable in
+//     the parts of the title bar zone that are draggable
+//
+// JS sets html background to match body's computed background so the
+// empty 40px strip on the LEFT of the title bar doesn't flash white —
+// it picks up Claude's dark theme automatically.
+const _titlebarH=40;
+const _injectedCss=
+  "html{padding-top:"+_titlebarH+"px !important;box-sizing:border-box !important;}"+
+  "body,body *{-webkit-app-region:no-drag !important;}";
+const _bgSyncJs="(function(){"+
+  "if(window.__cdh_bg_synced)return;"+
+  "window.__cdh_bg_synced=true;"+
+  "const _sync=function(){try{"+
+    "const _b=getComputedStyle(document.body).backgroundColor;"+
+    "if(_b&&_b!=='rgba(0, 0, 0, 0)'&&_b!=='transparent'){"+
+      "document.documentElement.style.background=_b;"+
+    "}"+
+  "}catch(_){}};"+
+  "_sync();"+
+  "setTimeout(_sync,500);"+
+  "setTimeout(_sync,2000);"+
+  // Re-sync if the theme changes (body class/style mutations).
+  "try{new MutationObserver(_sync).observe(document.body,{attributes:true,attributeFilter:['class','style']});}catch(_){}"+
 "})();";
 
-// Inject no-drag CSS + hover detector into ALL webContents (BrowserWindows
+// Inject reservation CSS + bg sync into ALL webContents (BrowserWindows
 // AND WebContentsViews). The main Claude UI renders in a WebContentsView
-// (not the BrowserWindow's own webContents), so browser-window-created alone
-// misses it.
+// (not the BrowserWindow's own webContents), so browser-window-created
+// alone misses it.
 if(process.platform==="linux"){
   _capp.on("web-contents-created",(e,wc)=>{
-    const _noDrag="body,body *{-webkit-app-region:no-drag !important;}";
     const _apply=()=>{
-      wc.insertCSS(_noDrag).catch(()=>{});
-      wc.executeJavaScript(_ovHoverJs).catch(()=>{});
+      wc.insertCSS(_injectedCss).catch(()=>{});
+      wc.executeJavaScript(_bgSyncJs).catch(()=>{});
     };
     wc.on("dom-ready",_apply);
     wc.on("did-navigate-in-page",_apply);
-    // Route hover sentinels to whichever window contains the cursor.
-    // Handles both Electron signatures:
-    //   old (event,level,message,line,sourceId)
-    //   new (event) where event.message is the message
-    wc.on("console-message",(...args)=>{
-      const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
-      if(msg!=="__CDH_HOVER_IN__"&&msg!=="__CDH_HOVER_OUT__")return;
-      const hit=_windowUnderCursor();
-      if(!hit)return;
-      const inZone=hit.cur.x>hit.b.x+hit.b.width-150&&hit.cur.y<hit.b.y+50;
-      _setWindowOv(hit.win,inZone);
-    });
   });
 }
 
@@ -466,17 +442,19 @@ _capp.on("browser-window-created",(e,w)=>{
 
   if(process.platform!=="linux"||!_iconDataUrl)return;
 
-  // CSS: fixed draggable icon wrapper top-left, 42x44px matching titleBarOverlay height.
-  // Also mark all interactive elements as no-drag so the titleBarOverlay drag region
-  // doesn't swallow click events on buttons/tabs (e.g. the Chat/Cowork/Code toggle).
+  // CSS: fixed icon wrapper at top-left of the title bar, 40x40 to match
+  // the titleBarOverlay height. The Claude UI is pushed down 40px (see the
+  // injected reservation CSS in web-contents-created above), so the icon
+  // and nav buttons no longer fight for vertical space — no horizontal
+  // shift of the nav container needed.
   const _css=[
     "#_cld_icon{",
       "position:fixed;top:0;left:0;",
-      "width:42px;height:44px;",
+      "width:40px;height:40px;",
       "z-index:2147483647;",
       "display:flex;align-items:center;justify-content:center;",
       "-webkit-app-region:drag !important;",
-      "user-select:none;box-sizing:border-box;padding:9px;",
+      "user-select:none;box-sizing:border-box;padding:8px;",
     "}",
     "#_cld_icon img{",
       "width:100%;height:100%;",
@@ -484,18 +462,20 @@ _capp.on("browser-window-created",(e,w)=>{
       "object-fit:contain;",
       "filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45));",
     "}",
-    // Thin drag edge along the very top of the window — above all buttons/tabs.
-    // Users can grab this strip to drag the window, like a standard Linux title bar.
+    // Drag region across the rest of the title bar (left of the window
+    // controls). The titleBarOverlay area itself is draggable in pixels
+    // not occupied by the buttons, but this gives a guaranteed wide strip.
     "#_cld_drag_edge{",
-      "position:fixed;top:0;left:42px;right:0;",
-      "height:8px;",
-      "z-index:2147483647;",
+      "position:fixed;top:0;left:40px;right:160px;",
+      "height:40px;",
+      "z-index:2147483646;",
       "-webkit-app-region:drag !important;",
       "user-select:none;",
     "}",
   ].join("");
 
-  // JS: wait for first top-left nav button, shift its container right, append icon.
+  // JS: append icon + drag strip to documentElement. No nav-button hunt
+  // anymore — the body-level padding-top means there's no overlap.
   const _js=[
     "(function(){",
       "if(document.getElementById('_cld_icon'))return;",
@@ -505,30 +485,11 @@ _capp.on("browser-window-created",(e,w)=>{
       "img.src='",_iconDataUrl,"';",
       "img.alt='Claude';",
       "el.appendChild(img);",
-      // Also inject the drag edge strip
+      "document.documentElement.appendChild(el);",
       "if(!document.getElementById('_cld_drag_edge')){",
         "const edge=document.createElement('div');",
         "edge.id='_cld_drag_edge';",
         "document.documentElement.appendChild(edge);",
-      "}",
-      "const place=()=>{",
-        "const all=Array.from(document.querySelectorAll('button,[role=button],[role=tab]'));",
-        "const tl=all.find(b=>{const r=b.getBoundingClientRect();",
-          "return r.top>=0&&r.top<52&&r.left>=0&&r.left<100&&r.width>0&&r.height>0;});",
-        "if(!tl)return false;",
-        "const p=tl.parentElement;",
-        "if(p&&!p.dataset.cldShifted){",
-          "p.dataset.cldShifted='1';",
-          "const pl=parseInt(getComputedStyle(p).paddingLeft)||0;",
-          "p.style.paddingLeft=(pl+44)+'px';",
-        "}",
-        "document.documentElement.appendChild(el);",
-        "return true;",
-      "};",
-      "if(!place()){",
-        "const obs=new MutationObserver(()=>{if(place())obs.disconnect();});",
-        "obs.observe(document.documentElement,{childList:true,subtree:true});",
-        "setTimeout(()=>obs.disconnect(),20000);",
       "}",
     "})();",
   ].join("");
@@ -543,37 +504,11 @@ _capp.on("browser-window-created",(e,w)=>{
   w.webContents.on("dom-ready",inject);
   w.webContents.on("did-navigate-in-page",inject);
 
-  // Overlay drawer: titleBarOverlay starts collapsed (10px — top edge of
-  // window controls peeking out). Expands to full height (44px) when the
-  // cursor enters the top-right hover zone; collapses when it leaves.
-  //
-  // Primary path: renderer-injected mousemove listener (installed by the
-  // web-contents-created handler above) signals state changes via console
-  // sentinels — event-driven, near-zero idle cost.
-  //
-  // Safety net: 4Hz poll per window. Catches cases the renderer can't see —
-  // specifically when the cursor is *inside* the titleBarOverlay zone (the
-  // Chromium-drawn overlay layer), because mousemove events in that region
-  // don't reach the web content. Examples: cursor materializing on the
-  // buttons via window switch / tray click, or cursor that was already
-  // there when the window gained focus. 4Hz = 250ms worst-case latency
-  // (~instant to users); still 60% less work than the old 10Hz poll.
-  w.__cdhOv={up:false};
-  _setWindowOv(w,false);// ensure collapsed initial state
-  const _ovVerify=()=>{
-    if(w.isDestroyed()||w.isMinimized()||!w.isVisible())return;
-    try{
-      const cur=require("electron").screen.getCursorScreenPoint();
-      const b=w.getBounds();
-      const curIn=cur.x>=b.x&&cur.x<b.x+b.width&&cur.y>=b.y&&cur.y<b.y+b.height;
-      if(!curIn){_setWindowOv(w,false);return;}
-      const inZone=cur.x>b.x+b.width-150&&cur.y<b.y+50;
-      _setWindowOv(w,inZone);
-    }catch(e){}
-  };
-  const _ovTimer=setInterval(_ovVerify,250);
-  w.on("blur",()=>_setWindowOv(w,false));
-  w.on("closed",()=>clearInterval(_ovTimer));
+  // Permanent 40px title bar at the top of the window. Web content is
+  // pushed down by 40px (via injected CSS in web-contents-created above)
+  // so nothing in the Claude UI shares pixels with the window controls.
+  // No hover, no polling — just a static, properly-sized native title bar.
+  try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
 });
 PREPENDJS
         cat /tmp/claude-prepend.js "$MAIN_JS" > /tmp/claude-combined.js
