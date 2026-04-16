@@ -359,18 +359,27 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
 // window.js asar patch shifts the main Claude WebContentsView down by
 // 40px natively, so Claude's layout uses `100vh = windowHeight - 40`
 // inside its own view and nothing is clipped, overflows, or needs CSS
-// hacks to fit. All we need to do here is mark interactive elements
-// as no-drag so they stay clickable in the draggable title bar zone.
+// hacks to fit.
+//
+// No-drag CSS is ONLY needed on the Claude WebContentsView, not the main
+// BrowserWindow. The main window's webContents IS the title bar shell —
+// its body MUST remain drag-enabled so the overlay compositor treats the
+// entire title bar zone as a native drag region (right-click → DE system
+// menu, left-click → window drag, double-click → maximize/restore).
+//
+// The Claude view (at y=40) is entirely below the overlay zone, so there
+// is no overlap. But claude.ai may set -webkit-app-region:drag on some
+// of its own elements (designed for the macOS traffic-light inset), which
+// would create unwanted drag regions inside the Claude UI — the no-drag
+// override prevents that.
 const _titlebarH=40;
-const _injectedCss="body,body *{-webkit-app-region:no-drag !important;}";
+const _noDragCss="body,body *{-webkit-app-region:no-drag !important;}";
 
-// Inject no-drag CSS into ALL webContents (BrowserWindows AND
-// WebContentsViews). The main Claude UI renders in a WebContentsView
-// (not the BrowserWindow's own webContents), so browser-window-created
-// alone misses it.
 if(process.platform==="linux"){
   _capp.on("web-contents-created",(e,wc)=>{
-    const _apply=()=>{wc.insertCSS(_injectedCss).catch(()=>{});};
+    // Skip BrowserWindow webContents — their title bar must stay draggable.
+    if(require("electron").BrowserWindow.fromWebContents(wc))return;
+    const _apply=()=>{wc.insertCSS(_noDragCss).catch(()=>{});};
     wc.on("dom-ready",_apply);
     wc.on("did-navigate-in-page",_apply);
   });
