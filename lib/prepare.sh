@@ -425,13 +425,14 @@ _capp.on("browser-window-created",(e,w)=>{
       "width:40px;height:40px;",
       "z-index:2147483647;",
       "display:flex;align-items:center;justify-content:center;",
-      // no-drag so clicks open the system menu (like KDE Dolphin's icon).
-      // Users drag the window via the adjacent #_cld_drag_edge strip.
-      "-webkit-app-region:no-drag !important;",
-      "cursor:default;user-select:none;box-sizing:border-box;padding:8px;",
+      // Part of the title bar drag region. Left-click = drag (standard),
+      // right-click = native DE system menu (KDE/GNOME show Maximize,
+      // Minimize, Close, etc.). Electron's titleBarOverlay is a compositor
+      // layer above web content — left-click can't be intercepted for a
+      // custom menu, but right-click triggers the DE's own window menu.
+      "-webkit-app-region:drag !important;",
+      "user-select:none;box-sizing:border-box;padding:8px;",
     "}",
-    "#_cld_icon:hover{background:rgba(255,255,255,0.08);}",
-    "#_cld_icon:active{background:rgba(255,255,255,0.15);}",
     "#_cld_icon img{",
       "width:100%;height:100%;",
       "pointer-events:none;-webkit-app-region:no-drag !important;",
@@ -461,7 +462,6 @@ _capp.on("browser-window-created",(e,w)=>{
       "img.src='",_iconDataUrl,"';",
       "img.alt='Claude';",
       "el.appendChild(img);",
-      "el.addEventListener('click',function(e){e.stopPropagation();console.log('__CDH_SYSTEM_MENU__');});",
       "document.documentElement.appendChild(el);",
       "if(!document.getElementById('_cld_drag_edge')){",
         "const edge=document.createElement('div');",
@@ -486,30 +486,6 @@ _capp.on("browser-window-created",(e,w)=>{
   // sits behind the window controls.
   try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
 
-  // System menu on icon click — mirrors KDE/GNOME window menu behaviour.
-  // Renderer sends a console sentinel; main pops a native context menu
-  // right below the icon (x:0, y:40).
-  w.webContents.on("console-message",(...args)=>{
-    const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
-    if(msg!=="__CDH_SYSTEM_MENU__")return;
-    const{Menu}=require("electron");
-    const isMax=w.isMaximized();
-    const isFull=w.isFullScreen();
-    const template=[
-      {label:isMax?"Restore":"Maximize",accelerator:"Super+PageUp",
-       click:()=>isMax?w.unmaximize():w.maximize()},
-      {label:"Minimize",accelerator:"Super+PageDown",
-       click:()=>w.minimize()},
-      {type:"separator"},
-      {label:isFull?"Exit Full Screen":"Full Screen",
-       click:()=>w.setFullScreen(!isFull)},
-      {label:"Always on Top",type:"checkbox",checked:w.isAlwaysOnTop(),
-       click:()=>w.setAlwaysOnTop(!w.isAlwaysOnTop())},
-      {type:"separator"},
-      {label:"Close",accelerator:"Alt+F4",click:()=>w.close()},
-    ];
-    Menu.buildFromTemplate(template).popup({window:w,x:0,y:_titlebarH});
-  });
 });
 PREPENDJS
         cat /tmp/claude-prepend.js "$MAIN_JS" > /tmp/claude-combined.js
