@@ -85,27 +85,73 @@ describe('bwrap command security principles', () => {
     assert.ok(MAX >= 1 && MAX <= 50, `Max sessions ${MAX} out of range`);
   });
 
-  it('ENV_ALLOWLIST does not include dangerous variables', () => {
-    const allowlist = new Set([
-      'HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'LANG', 'LC_ALL',
-      'TERM', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
-      'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME',
-      'XDG_SESSION_TYPE', 'DBUS_SESSION_BUS_ADDRESS',
-      'CLAUDE_CODE_OAUTH_TOKEN',
-      'NODE_ENV', 'ELECTRON_RUN_AS_NODE',
-      'SSH_AUTH_SOCK',
-    ]);
+  // Parse the real ENV_ALLOWLIST from the source file so this test stays
+  // in sync with the actual shipped allowlist instead of a hand-copied one.
+  function loadRealAllowlist() {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'stubs', 'claude-swift-stub', 'index.js'),
+      'utf8'
+    );
+    const m = src.match(/ENV_ALLOWLIST\s*=\s*new Set\(\[([\s\S]*?)\]\)/);
+    if (!m) throw new Error('Could not locate ENV_ALLOWLIST in source');
+    const names = [];
+    for (const line of m[1].split('\n')) {
+      // Strip // line comments before extracting quoted identifiers.
+      const stripped = line.replace(/\/\/.*$/, '');
+      for (const qm of stripped.matchAll(/['"]([A-Z][A-Z0-9_]+)['"]/g)) {
+        names.push(qm[1]);
+      }
+    }
+    return new Set(names);
+  }
 
-    // These should NEVER be in the allowlist
+  it('ENV_ALLOWLIST does not include dangerous variables', () => {
+    const allowlist = loadRealAllowlist();
+
+    // These should NEVER be in the allowlist — injection vectors,
+    // cloud credentials with out-of-scope reach, or secrets that
+    // shouldn't silently leak from the host shell into sandboxed
+    // agent sessions.
     const dangerous = [
+      // Code-injection via loader / interpreter
       'LD_PRELOAD', 'LD_LIBRARY_PATH', 'PYTHONPATH',
       'NODE_OPTIONS', 'BASH_ENV', 'ENV',
-      'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY',
+      // Cloud credentials (broader scope than model backend — opt-in only)
+      'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN',
+      'GOOGLE_APPLICATION_CREDENTIALS',
+      // Foreign-service secrets
       'GITHUB_TOKEN', 'NPM_TOKEN',
     ];
 
     for (const v of dangerous) {
       assert.ok(!allowlist.has(v), `Dangerous variable ${v} is in ENV_ALLOWLIST`);
+    }
+  });
+
+  it('ENV_ALLOWLIST includes Anthropic SDK env vars for custom backends', () => {
+    // Users point Code/Cowork sessions at custom backends (LiteLLM,
+    // LM Studio, Ollama, OpenRouter, vLLM, …) by setting standard
+    // ANTHROPIC_* env vars in their shell. If any of these get
+    // accidentally dropped from the allowlist, the stub silently
+    // strips them and the custom backend is ignored — exactly the
+    // regression we just fixed.
+    const allowlist = loadRealAllowlist();
+    const required = [
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+      'ANTHROPIC_BASE_URL',
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_SMALL_FAST_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'ANTHROPIC_CUSTOM_HEADERS',
+      'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
+    ];
+    for (const v of required) {
+      assert.ok(allowlist.has(v), `Custom-backend env var ${v} missing from ENV_ALLOWLIST — see README → "Using a custom model backend"`);
     }
   });
 

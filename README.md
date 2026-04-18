@@ -184,6 +184,143 @@ Configure MCP servers in `~/.config/Claude/claude_desktop_config.json`:
 
 ---
 
+## Using a custom model backend
+
+Point Code / Cowork sessions at your own model backend — a local LLM via **LM Studio** or **Ollama**, a routing proxy like **LiteLLM** or **OpenRouter**, or a self-hosted **vLLM** server — instead of Anthropic's default endpoint.
+
+> **Scope:** this override applies to **Code / Cowork (agent) mode only**. Conversation mode keeps using `claude.ai` because that UI is a hosted web app, not something we can redirect to a different frontend.
+
+### Two ways to configure
+
+**1. CLI flags (quickest for trying it out):**
+
+```bash
+claude-desktop-hardened --model claude-sonnet-4-5-20250929 \
+                       --base-url http://localhost:4000
+```
+
+Flags are consumed by the launcher and forwarded as env vars to the Code CLI. They don't get passed to Electron.
+
+**2. Shell env vars (persistent — put in `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`):**
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:4000
+export ANTHROPIC_AUTH_TOKEN=sk-your-backend-key
+export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+```
+
+Env vars are the recommended path for daily use. Secrets (API keys, auth tokens) are deliberately **not** accepted as CLI flags — they'd leak into `ps aux` and shell history.
+
+### Provider recipes
+
+Each block shows the env var form. Swap `export FOO=bar` for `claude-desktop-hardened --foo bar` equivalents as needed.
+
+**LiteLLM proxy** — the most common multi-provider setup:
+
+```bash
+# Terminal 1: start the proxy
+pip install litellm
+litellm --port 4000 --model claude-sonnet-4-5-20250929
+
+# Terminal 2: point the app at it
+export ANTHROPIC_BASE_URL=http://localhost:4000
+export ANTHROPIC_AUTH_TOKEN=sk-your-litellm-key
+export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+claude-desktop-hardened
+```
+
+**LM Studio** — local GUI LLM server:
+
+```bash
+# In LM Studio: load a model, start the server (default port 1234).
+export ANTHROPIC_BASE_URL=http://localhost:1234/v1
+export ANTHROPIC_AUTH_TOKEN=lm-studio
+export ANTHROPIC_MODEL=<your-loaded-model-id>
+claude-desktop-hardened
+```
+
+**Ollama** — via LiteLLM passthrough (Ollama's native API isn't Anthropic-compatible, so proxy through LiteLLM):
+
+```bash
+# ~/litellm.config.yaml
+# model_list:
+#   - model_name: llama3.1:70b
+#     litellm_params:
+#       model: ollama/llama3.1:70b
+#       api_base: http://localhost:11434
+
+litellm --config ~/litellm.config.yaml --port 4000 &
+export ANTHROPIC_BASE_URL=http://localhost:4000
+export ANTHROPIC_MODEL=llama3.1:70b
+claude-desktop-hardened
+```
+
+**OpenRouter** — hosted multi-provider routing:
+
+```bash
+export ANTHROPIC_BASE_URL=https://openrouter.ai/api/v1
+export ANTHROPIC_AUTH_TOKEN=sk-or-v1-...
+export ANTHROPIC_MODEL=anthropic/claude-sonnet-4.5
+claude-desktop-hardened
+```
+
+**vLLM** — self-hosted inference server:
+
+```bash
+# Start vLLM with Anthropic-compatible endpoints enabled:
+vllm serve <your-model> --host 0.0.0.0 --port 8000
+
+export ANTHROPIC_BASE_URL=http://localhost:8000
+export ANTHROPIC_MODEL=<your-model>
+claude-desktop-hardened
+```
+
+**Anthropic direct (BYOK)** — use your own Anthropic key instead of OAuth:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+# (no ANTHROPIC_BASE_URL needed — uses Anthropic's default)
+claude-desktop-hardened
+```
+
+### Environment variable reference
+
+| Variable | Purpose | Example |
+|---|---|---|
+| `ANTHROPIC_BASE_URL` | Override backend URL | `http://localhost:4000` |
+| `ANTHROPIC_AUTH_TOKEN` | Bearer token for the backend | `sk-litellm-…` |
+| `ANTHROPIC_API_KEY` | Anthropic-style API key | `sk-ant-…` |
+| `ANTHROPIC_MODEL` | Default model | `claude-sonnet-4-5-20250929` |
+| `ANTHROPIC_SMALL_FAST_MODEL` | Quick/cheap model for summaries | `claude-haiku-4-5` |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Per-tier override (when UI picks Opus) | `gpt-4o` |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Per-tier override (when UI picks Sonnet) | `gpt-4o-mini` |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Per-tier override (when UI picks Haiku) | `llama3.1:8b` |
+| `ANTHROPIC_CUSTOM_HEADERS` | Extra HTTP headers sent with every request | `X-Project: foo` |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Per-request output token cap | `8192` |
+
+### Verify
+
+```bash
+claude-desktop-hardened --doctor
+```
+
+If any `ANTHROPIC_*` env var is set, `--doctor` shows a **Custom Model Backend** section with the resolved values (secrets redacted) and probes `ANTHROPIC_BASE_URL` for reachability. A `401` or `404` from the probe is still `[OK]` — it proves the socket is up and TLS worked, which is what the check is actually testing.
+
+### Troubleshooting
+
+- **"My CLI flag is ignored"** — make sure `--model` and `--base-url` come *before* any `--` separator or free args. Order: `claude-desktop-hardened --model X --base-url Y`.
+- **"Cowork session hangs on connect"** — run `--doctor`, confirm reachability. Check firewalls and whether your backend is listening on `0.0.0.0` (not just `127.0.0.1` if you're using a container).
+- **"TLS error"** — local proxies with self-signed certs will fail. Use plain `http://` for loopback, or install the self-signed cert into your system CA store.
+- **"Model name rejected"** — provider model-name formats differ: OpenRouter uses `vendor/model`, Ollama uses `name:tag`, LM Studio wants the exact loaded model's ID string from its server UI.
+
+### Bedrock / Vertex / extra env vars (advanced)
+
+AWS Bedrock and Google Vertex aren't default-enabled because their required env vars (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) are cloud credentials with broader scope than just the model backend — we don't want them silently leaking into the sandbox unless you've explicitly said you want them there.
+
+To opt in, edit the allowlist in `/usr/lib64/claude-desktop-hardened/stubs/claude-swift-stub/index.js` (or `/usr/lib/claude-desktop-hardened/...` on Debian). Add the vars you need to the `ENV_ALLOWLIST` Set. **Note:** the edit is reverted on package upgrade; for reproducibility, keep a post-install hook that re-applies your override, or open an issue if you'd like first-class support.
+
+---
+
 ## Security model
 
 This project treats Claude's agentic capabilities as a security boundary. Every feature that touches the host system is sandboxed, logged, or gated behind user confirmation.
@@ -196,7 +333,7 @@ When Cowork spawns a Claude Code session, it runs inside a [bubblewrap](https://
 - **Writable mounts** limited to the working directory, session data, and `~/.config/Claude`
 - **Resource limits** via `systemd-run` — 4GB memory, 200% CPU (2 cores), 512 max tasks to prevent runaway processes and fork bombs
 - **`--die-with-parent`** ensures cleanup if the parent process exits
-- **Environment allowlisting** — only safe variables pass through (HOME, PATH, DISPLAY, XDG_*, etc.)
+- **Environment allowlisting** — only safe variables pass through (HOME, PATH, DISPLAY, XDG_*, plus standard `ANTHROPIC_*` SDK vars for [custom backends](#using-a-custom-model-backend)). Cloud credentials (`AWS_*`, `GOOGLE_*`) are deliberately excluded.
 - **No unsandboxed fallback** — if bubblewrap is not found, sessions refuse to start
 
 Bubblewrap is a **hard dependency** — if you're using this package, you get sandboxing. That's the point.

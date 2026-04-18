@@ -34,15 +34,49 @@ const CLAUDE_BINARY_SEARCH_PATHS = [
   '/usr/bin/claude',
 ];
 
-// Environment variables allowed to pass through to Claude Code CLI
+// Environment variables allowed to pass through to Claude Code CLI.
+//
+// Strict allowlist: host env vars NOT in this set are stripped before the
+// CLI is spawned. This prevents accidental leakage of unrelated env state
+// (browser cookies via $CHROMIUM_USER_DATA_DIR, SSH keys, etc.) into the
+// sandboxed Cowork session.
+//
+// If you're adding a new user-facing env var (e.g. for a new model provider
+// integration), ALSO update the "Using a custom model backend" section of
+// README.md — users can't discover what they can configure if the allowlist
+// and the docs drift apart.
 const ENV_ALLOWLIST = new Set([
+  // Shell + locale essentials
   'HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'LANG', 'LC_ALL',
   'TERM', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
   'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME',
   'XDG_SESSION_TYPE', 'DBUS_SESSION_BUS_ADDRESS',
-  'CLAUDE_CODE_OAUTH_TOKEN',
   'NODE_ENV', 'ELECTRON_RUN_AS_NODE',
   'SSH_AUTH_SOCK',
+
+  // Claude Code OAuth flow (upstream auth)
+  'CLAUDE_CODE_OAUTH_TOKEN',
+
+  // Anthropic SDK standard env vars — let users point Code/Cowork sessions
+  // at custom backends (LiteLLM, LM Studio, Ollama, OpenRouter, vLLM, …)
+  // or a self-supplied Anthropic API key. The CLI itself reads these.
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_SMALL_FAST_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_CUSTOM_HEADERS',
+  'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
+
+  // NOT default-allowed (would need opt-in — they're cloud credentials
+  // with broader scope than just the model backend):
+  //   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION (Bedrock)
+  //   GOOGLE_APPLICATION_CREDENTIALS / VERTEX_PROJECT_ID (Vertex)
+  //   CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX (enables the above)
+  // See README → "Bedrock / Vertex / extra env vars" for how to opt in.
 ]);
 
 // Default resource limits for sandboxed sessions (enforced via systemd-run).
