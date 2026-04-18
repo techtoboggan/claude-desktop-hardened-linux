@@ -677,11 +677,57 @@ else
     KEYRING_FLAG="--password-store=basic"
 fi
 
-# Handle special flags
-case "\${1:-}" in
-    --doctor) exec "${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened/doctor.sh" ;;
-    --focus)  exec "${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened/focus.sh" ;;
-esac
+# Handle special flags and custom-backend overrides. --model / --base-url
+# are consumed here and converted to env vars (ANTHROPIC_MODEL /
+# ANTHROPIC_BASE_URL) which the Claude Code CLI reads at startup. They're
+# shifted off \$@ so they don't get forwarded to Electron as unknown args.
+#
+# Secrets (API keys, auth tokens) are deliberately NOT accepted as flags —
+# they'd leak into \`ps aux\` and shell history. Use env vars or a sourced
+# secrets file instead. See README → "Using a custom model backend".
+while [[ "\${1:-}" == --* ]]; do
+    case "\$1" in
+        --doctor)
+            exec "\${CLAUDE_SHARE_DIR:-${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened}/doctor.sh"
+            ;;
+        --focus)
+            exec "\${CLAUDE_SHARE_DIR:-${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened}/focus.sh"
+            ;;
+        --model)
+            if [ -z "\${2:-}" ]; then
+                echo "Error: --model requires a value (e.g. --model claude-sonnet-4-5-20250929)" >&2
+                exit 1
+            fi
+            export ANTHROPIC_MODEL="\$2"
+            shift 2
+            ;;
+        --model=*)
+            export ANTHROPIC_MODEL="\${1#--model=}"
+            shift
+            ;;
+        --base-url)
+            if [ -z "\${2:-}" ]; then
+                echo "Error: --base-url requires a value (e.g. --base-url http://localhost:4000)" >&2
+                exit 1
+            fi
+            export ANTHROPIC_BASE_URL="\$2"
+            shift 2
+            ;;
+        --base-url=*)
+            export ANTHROPIC_BASE_URL="\${1#--base-url=}"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            # Unknown flag — let Electron handle it (some flags like
+            # --disable-gpu are valid Chromium flags users might pass).
+            break
+            ;;
+    esac
+done
 
 LOG_FILE="\$HOME/claude-desktop-hardened-launcher.log"
 

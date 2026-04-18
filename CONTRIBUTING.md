@@ -85,6 +85,14 @@ The `stubs/cowork/` directory contains the session management layer:
 
 When modifying stubs, run the corresponding test file to verify your changes.
 
+### Environment variable passthrough
+
+Env-var passthrough from the user's shell to Cowork-sandboxed Claude Code sessions is controlled by the `ENV_ALLOWLIST` `Set` at the top of `stubs/claude-swift-stub/index.js`. Anything not in that set gets stripped by `filterEnv()` before the CLI is spawned.
+
+If you're adding a new user-facing integration (a new model provider, a new upstream feature that reads an env var), you **must** add the relevant variable names to `ENV_ALLOWLIST` *and* mention them in the README's ["Using a custom model backend"](../README.md#using-a-custom-model-backend) section. A test at `tests/test_bwrap_command.js` parses the allowlist from source and asserts the `ANTHROPIC_*` SDK vars are present — extend that test when you add new required names, so the next upstream bump doesn't silently drop them.
+
+Do **not** add cloud credentials (`AWS_*`, `GOOGLE_*`, `AZURE_*`) to the default allowlist — those have broader scope than just the model backend. Document them as opt-in in the README's "Bedrock / Vertex" subsection instead.
+
 ## Pull request guidelines
 
 - Keep PRs focused — one concern per PR

@@ -247,6 +247,67 @@ else
     check_warn "dbus-send not available — cannot check keyring"
 fi
 
+# 10. Custom model backend (only if user has configured one)
+#
+# If any ANTHROPIC_* env var is set, echo the resolved config (redacting
+# anything that looks like a secret) and probe ANTHROPIC_BASE_URL for
+# reachability. Helps users confirm their LiteLLM / LM Studio / Ollama /
+# OpenRouter setup BEFORE launching a session and finding out in the logs.
+redact_secret() {
+    # Show the first 4 chars + "…" + the last 4, or a placeholder if too short.
+    local v="$1"
+    local len=${#v}
+    if [ "$len" -le 10 ]; then
+        echo "****"
+    else
+        printf '%s…%s (%d chars)' "${v:0:4}" "${v: -4}" "$len"
+    fi
+}
+
+if [ -n "${ANTHROPIC_BASE_URL:-}${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}${ANTHROPIC_MODEL:-}" ]; then
+    section "Custom Model Backend"
+
+    if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+        check_pass "ANTHROPIC_BASE_URL = $ANTHROPIC_BASE_URL"
+        if command -v curl >/dev/null 2>&1; then
+            # Probe TCP + TLS. Even 401/404 means the socket is up.
+            RC=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$ANTHROPIC_BASE_URL" 2>&1)
+            if [[ "$RC" =~ ^[2-5][0-9][0-9]$ ]]; then
+                check_pass "Backend reachable (HTTP $RC)"
+            elif [ "$RC" = "000" ]; then
+                check_fail "Backend unreachable (connection refused / DNS fail / TLS error)"
+                check_hint "Verify the service is running on the specified URL"
+                check_hint "For self-signed TLS: run behind a trusted cert or use http://"
+            else
+                check_warn "Backend probe returned: $RC"
+            fi
+        else
+            check_warn "curl not available — skipping reachability probe"
+        fi
+    fi
+
+    if [ -n "${ANTHROPIC_MODEL:-}" ]; then
+        check_pass "ANTHROPIC_MODEL = $ANTHROPIC_MODEL"
+    fi
+    if [ -n "${ANTHROPIC_SMALL_FAST_MODEL:-}" ]; then
+        check_pass "ANTHROPIC_SMALL_FAST_MODEL = $ANTHROPIC_SMALL_FAST_MODEL"
+    fi
+
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        check_pass "ANTHROPIC_API_KEY = $(redact_secret "$ANTHROPIC_API_KEY")"
+    fi
+    if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+        check_pass "ANTHROPIC_AUTH_TOKEN = $(redact_secret "$ANTHROPIC_AUTH_TOKEN")"
+    fi
+
+    if [ -z "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+        check_warn "Custom base URL set but no ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN"
+        check_hint "Most providers require a bearer token even for local proxies"
+    fi
+
+    check_hint "Recipes: see README → \"Using a custom model backend\""
+fi
+
 # Summary
 echo
 echo "============================================"
