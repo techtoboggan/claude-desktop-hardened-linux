@@ -289,8 +289,24 @@ if [ -n "${ANTHROPIC_BASE_URL:-}${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}$
     if [ -n "${ANTHROPIC_MODEL:-}" ]; then
         check_pass "ANTHROPIC_MODEL = $ANTHROPIC_MODEL"
     fi
+    # Per-tier mappings — these are what the UI's Sonnet/Opus/Haiku picker
+    # actually resolves to when spawning the CLI. The --model launcher flag
+    # sets all of these to the same value so tier selection becomes a no-op.
+    [ -n "${ANTHROPIC_DEFAULT_OPUS_MODEL:-}" ] && check_pass "ANTHROPIC_DEFAULT_OPUS_MODEL = $ANTHROPIC_DEFAULT_OPUS_MODEL"
+    [ -n "${ANTHROPIC_DEFAULT_SONNET_MODEL:-}" ] && check_pass "ANTHROPIC_DEFAULT_SONNET_MODEL = $ANTHROPIC_DEFAULT_SONNET_MODEL"
+    [ -n "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" ] && check_pass "ANTHROPIC_DEFAULT_HAIKU_MODEL = $ANTHROPIC_DEFAULT_HAIKU_MODEL"
     if [ -n "${ANTHROPIC_SMALL_FAST_MODEL:-}" ]; then
         check_pass "ANTHROPIC_SMALL_FAST_MODEL = $ANTHROPIC_SMALL_FAST_MODEL"
+    fi
+
+    # OAuth token conflict warning — if BASE_URL is custom but the user still
+    # has a Claude.ai OAuth token, the CLI may try to auth with it against
+    # the custom backend and fail. Hint to unset CLAUDE_CODE_OAUTH_TOKEN for
+    # a clean custom-backend setup.
+    if [ -n "${ANTHROPIC_BASE_URL:-}" ] && [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+        check_warn "CLAUDE_CODE_OAUTH_TOKEN is set alongside a custom ANTHROPIC_BASE_URL"
+        check_hint "The CLI may try to use the OAuth token against your custom backend, causing auth failures"
+        check_hint "unset CLAUDE_CODE_OAUTH_TOKEN  # before launching, if you hit 401/403"
     fi
 
     if [ -n "${ANTHROPIC_API_KEY:-}" ]; then

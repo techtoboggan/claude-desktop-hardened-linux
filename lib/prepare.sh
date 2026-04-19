@@ -698,11 +698,26 @@ while [[ "\${1:-}" == --* ]]; do
                 echo "Error: --model requires a value (e.g. --model claude-sonnet-4-5-20250929)" >&2
                 exit 1
             fi
+            # Set ALL the tier mappings so the UI's Sonnet/Opus/Haiku picker
+            # maps to this model regardless of which tier the user selects.
+            # Without this, the UI spawns the CLI with --model <tier-name>
+            # which overrides ANTHROPIC_MODEL. Users can still override per
+            # tier by setting ANTHROPIC_DEFAULT_*_MODEL directly.
             export ANTHROPIC_MODEL="\$2"
+            export ANTHROPIC_DEFAULT_OPUS_MODEL="\${ANTHROPIC_DEFAULT_OPUS_MODEL:-\$2}"
+            export ANTHROPIC_DEFAULT_SONNET_MODEL="\${ANTHROPIC_DEFAULT_SONNET_MODEL:-\$2}"
+            export ANTHROPIC_DEFAULT_HAIKU_MODEL="\${ANTHROPIC_DEFAULT_HAIKU_MODEL:-\$2}"
+            export ANTHROPIC_SMALL_FAST_MODEL="\${ANTHROPIC_SMALL_FAST_MODEL:-\$2}"
             shift 2
             ;;
         --model=*)
-            export ANTHROPIC_MODEL="\${1#--model=}"
+            _cdh_m="\${1#--model=}"
+            export ANTHROPIC_MODEL="\$_cdh_m"
+            export ANTHROPIC_DEFAULT_OPUS_MODEL="\${ANTHROPIC_DEFAULT_OPUS_MODEL:-\$_cdh_m}"
+            export ANTHROPIC_DEFAULT_SONNET_MODEL="\${ANTHROPIC_DEFAULT_SONNET_MODEL:-\$_cdh_m}"
+            export ANTHROPIC_DEFAULT_HAIKU_MODEL="\${ANTHROPIC_DEFAULT_HAIKU_MODEL:-\$_cdh_m}"
+            export ANTHROPIC_SMALL_FAST_MODEL="\${ANTHROPIC_SMALL_FAST_MODEL:-\$_cdh_m}"
+            unset _cdh_m
             shift
             ;;
         --base-url)
