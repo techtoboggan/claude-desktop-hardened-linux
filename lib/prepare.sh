@@ -451,27 +451,124 @@ _capp.on("browser-window-created",(e,w)=>{
     // Drag region across the rest of the title bar (left of the window
     // controls). The titleBarOverlay area itself is draggable in pixels
     // not occupied by the buttons, but this gives a guaranteed wide strip.
+    // NOTE: starts after the backend chip so clicks on the chip aren't
+    // intercepted by the drag region.
     "#_cld_drag_edge{",
-      "position:fixed;top:0;left:40px;right:160px;",
+      "position:fixed;top:0;left:260px;right:160px;",
       "height:40px;",
       "z-index:2147483646;",
       "-webkit-app-region:drag !important;",
       "user-select:none;",
     "}",
+    // Backend mode chip — tiny pill showing which backend Code sessions
+    // will use. no-drag island inside the title bar drag region so clicks
+    // register normally. Hover shows full backend URL / model via native
+    // `title` tooltip.
+    "#_cdh_backend_chip{",
+      "position:fixed;top:4px;left:48px;height:32px;",
+      "padding:0 12px;border-radius:16px;",
+      "display:flex;align-items:center;gap:6px;",
+      "font:500 12px/1 system-ui,-apple-system,sans-serif;",
+      "color:rgba(255,255,255,0.92);",
+      "background:rgba(255,255,255,0.08);",
+      "border:1px solid rgba(255,255,255,0.12);",
+      "cursor:pointer;user-select:none;",
+      "-webkit-app-region:no-drag !important;",
+      "z-index:2147483647;",
+      "transition:background .12s ease,border-color .12s ease;",
+      "max-width:200px;",
+    "}",
+    "#_cdh_backend_chip:hover{background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.2);}",
+    "#_cdh_backend_chip:active{background:rgba(255,255,255,0.2);}",
+    "#_cdh_backend_chip[data-mode=\"local\"]{",
+      "color:#7ee787;background:rgba(126,231,135,0.12);border-color:rgba(126,231,135,0.25);",
+    "}",
+    "#_cdh_backend_chip[data-mode=\"local\"]:hover{background:rgba(126,231,135,0.2);}",
+    "#_cdh_backend_chip .cdh-dot{",
+      "width:6px;height:6px;border-radius:50%;",
+      "background:currentColor;flex-shrink:0;",
+    "}",
+    "#_cdh_backend_chip .cdh-label{",
+      "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
+      "max-width:160px;",
+    "}",
   ].join("");
 
-  // JS: append icon + drag strip to documentElement. No nav-button hunt
-  // anymore — the body-level padding-top means there's no overlap.
+  // Resolve the current backend mode from env + config. Runs in main,
+  // then gets injected as a JS literal into the renderer's chip.
+  const _resolveBackendMode=()=>{
+    const envUrl=process.env.ANTHROPIC_BASE_URL;
+    const envModel=process.env.ANTHROPIC_MODEL||process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+    if(envUrl){
+      return{mode:"local",baseUrl:envUrl,model:envModel||"custom",source:"env"};
+    }
+    try{
+      const cfgPath=require("path").join(
+        process.env.XDG_CONFIG_HOME||require("path").join(require("os").homedir(),".config"),
+        "Claude","custom-backend.json"
+      );
+      if(require("fs").existsSync(cfgPath)){
+        const cfg=JSON.parse(require("fs").readFileSync(cfgPath,"utf8"));
+        if(cfg&&cfg.enabled&&cfg.baseUrl){
+          return{mode:"local",baseUrl:cfg.baseUrl,model:cfg.model||"custom",source:"config"};
+        }
+        if(cfg&&cfg.baseUrl){
+          // Configured but toggled off — report as anthropic but carry
+          // the config so the chip tooltip can say "Click to switch to X"
+          return{mode:"anthropic",configured:{baseUrl:cfg.baseUrl,model:cfg.model||"?"}};
+        }
+      }
+    }catch(_){}
+    return{mode:"anthropic"};
+  };
+
+  // JS: append icon + chip + drag strip to documentElement. No nav-button
+  // hunt anymore — the body-level padding-top means there's no overlap.
+  // The chip is a no-drag island inside the title bar drag region.
+  const _bmState=_resolveBackendMode();
+  const _bmStateJson=JSON.stringify(_bmState);
   const _js=[
     "(function(){",
-      "if(document.getElementById('_cld_icon'))return;",
-      "const el=document.createElement('div');",
-      "el.id='_cld_icon';",
-      "const img=document.createElement('img');",
-      "img.src='",_iconDataUrl,"';",
-      "img.alt='Claude';",
-      "el.appendChild(img);",
-      "document.documentElement.appendChild(el);",
+      "const _state=",_bmStateJson,";",
+      // Icon (create once; re-injections are no-ops via the id check)
+      "if(!document.getElementById('_cld_icon')){",
+        "const el=document.createElement('div');",
+        "el.id='_cld_icon';",
+        "const img=document.createElement('img');",
+        "img.src='",_iconDataUrl,"';",
+        "img.alt='Claude';",
+        "el.appendChild(img);",
+        "document.documentElement.appendChild(el);",
+      "}",
+      // Backend chip — created fresh each inject so state updates render.
+      "let chip=document.getElementById('_cdh_backend_chip');",
+      "if(!chip){",
+        "chip=document.createElement('div');",
+        "chip.id='_cdh_backend_chip';",
+        "const dot=document.createElement('span');dot.className='cdh-dot';",
+        "const lbl=document.createElement('span');lbl.className='cdh-label';",
+        "chip.appendChild(dot);chip.appendChild(lbl);",
+        "chip.addEventListener('click',function(e){",
+          "e.stopPropagation();",
+          "console.log('__CDH_TOGGLE_BACKEND__');",
+        "});",
+        "document.documentElement.appendChild(chip);",
+      "}",
+      "const lblEl=chip.querySelector('.cdh-label');",
+      "if(_state.mode==='local'){",
+        "chip.dataset.mode='local';",
+        "lblEl.textContent=_state.model;",
+        "chip.title='Local backend active\\nURL: '+_state.baseUrl+'\\nModel: '+_state.model+'\\nSource: '+(_state.source==='env'?'shell env var':'config file')+'\\nClick to switch to Anthropic (affects next Code session)';",
+      "}else{",
+        "chip.dataset.mode='anthropic';",
+        "lblEl.textContent='Anthropic';",
+        "if(_state.configured){",
+          "chip.title='Anthropic (default)\\nClick to switch to local: '+_state.configured.model+' @ '+_state.configured.baseUrl+'\\nAffects next Code session';",
+        "}else{",
+          "chip.title='Anthropic (default)\\nNo local backend configured.\\nSet with: claude-desktop-hardened --model NAME --base-url URL';",
+        "}",
+      "}",
+      // Drag edge
       "if(!document.getElementById('_cld_drag_edge')){",
         "const edge=document.createElement('div');",
         "edge.id='_cld_drag_edge';",
@@ -495,6 +592,30 @@ _capp.on("browser-window-created",(e,w)=>{
   // sits behind the window controls.
   try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
 
+  // Backend toggle: renderer chip fires console sentinel, main flips the
+  // config file + re-injects the updated chip. Already-running Code
+  // sessions keep their original env — the flip only affects future
+  // spawns via the stub's dynamic filterEnv() lookup.
+  w.webContents.on("console-message",(...args)=>{
+    const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
+    if(msg!=="__CDH_TOGGLE_BACKEND__")return;
+    try{
+      const cfgPath=require("path").join(
+        process.env.XDG_CONFIG_HOME||require("path").join(require("os").homedir(),".config"),
+        "Claude","custom-backend.json"
+      );
+      let cfg={};
+      try{cfg=JSON.parse(require("fs").readFileSync(cfgPath,"utf8"));}catch(_){}
+      cfg.enabled=!cfg.enabled;
+      require("fs").mkdirSync(require("path").dirname(cfgPath),{recursive:true});
+      require("fs").writeFileSync(cfgPath,JSON.stringify(cfg,null,2));
+      console.log("[cowork-linux] Backend toggled →",cfg.enabled?"local":"anthropic","(next Code session picks this up)");
+      // Re-inject the chip so it reflects the new state.
+      inject();
+    }catch(ex){
+      console.error("[cowork-linux] Backend toggle failed:",ex.message);
+    }
+  });
 });
 PREPENDJS
         cat /tmp/claude-prepend.js "$MAIN_JS" > /tmp/claude-combined.js
@@ -677,6 +798,33 @@ else
     KEYRING_FLAG="--password-store=basic"
 fi
 
+# Backend config file path — shared with the stub (stubs/claude-swift-stub/
+# index.js reads the same file at spawn time) and the title-bar toggle UI.
+BACKEND_CFG="\${XDG_CONFIG_HOME:-\$HOME/.config}/Claude/custom-backend.json"
+
+# Helper: write the backend config (uses python3 which is a hard dep on
+# Fedora/Debian and available on Arch-with-python). Falls back to a simple
+# jq-style hand-rolled writer if python3 is somehow missing.
+_cdh_write_backend_cfg() {
+    local enabled="\$1" base_url="\$2" model="\$3"
+    mkdir -p "\$(dirname "\$BACKEND_CFG")"
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "
+import json, os, sys
+path = '\$BACKEND_CFG'
+existing = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f: existing = json.load(f) or {}
+    except: pass
+existing['enabled'] = '\$enabled' == 'true'
+if '\$base_url': existing['baseUrl'] = '\$base_url'
+if '\$model':    existing['model']   = '\$model'
+with open(path, 'w') as f: json.dump(existing, f, indent=2)
+"
+    fi
+}
+
 # Handle special flags and custom-backend overrides. --model / --base-url
 # are consumed here and converted to env vars (ANTHROPIC_MODEL /
 # ANTHROPIC_BASE_URL) which the Claude Code CLI reads at startup. They're
@@ -693,6 +841,43 @@ while [[ "\${1:-}" == --* ]]; do
         --focus)
             exec "\${CLAUDE_SHARE_DIR:-${INSTALL_LIB_DIR}/../../share/claude-desktop-hardened}/focus.sh"
             ;;
+        --toggle-backend)
+            # Flip the "enabled" flag in the backend config. For keyboard
+            # shortcut bindings. Prints the new state and exits.
+            if command -v python3 >/dev/null 2>&1; then
+                python3 -c "
+import json, os
+p = '\$BACKEND_CFG'
+cfg = {}
+if os.path.exists(p):
+    try:
+        with open(p) as f: cfg = json.load(f) or {}
+    except: pass
+cfg['enabled'] = not cfg.get('enabled', False)
+os.makedirs(os.path.dirname(p), exist_ok=True)
+with open(p, 'w') as f: json.dump(cfg, f, indent=2)
+state = 'Local (' + cfg.get('model', '?') + ')' if cfg['enabled'] else 'Anthropic'
+print('Backend toggled →', state)
+print('Affects the next Code session you start; current sessions keep their env.')
+"
+            else
+                echo "Error: python3 required for --toggle-backend" >&2
+                exit 1
+            fi
+            exit 0
+            ;;
+        --use-local)
+            # Explicitly enable the configured local backend (no toggle).
+            _cdh_write_backend_cfg true "" ""
+            echo "Backend → Local (uses configured baseUrl/model from \$BACKEND_CFG)"
+            exit 0
+            ;;
+        --use-anthropic)
+            # Explicitly revert to Anthropic upstream.
+            _cdh_write_backend_cfg false "" ""
+            echo "Backend → Anthropic"
+            exit 0
+            ;;
         --model)
             if [ -z "\${2:-}" ]; then
                 echo "Error: --model requires a value (e.g. --model claude-sonnet-4-5-20250929)" >&2
@@ -708,6 +893,9 @@ while [[ "\${1:-}" == --* ]]; do
             export ANTHROPIC_DEFAULT_SONNET_MODEL="\${ANTHROPIC_DEFAULT_SONNET_MODEL:-\$2}"
             export ANTHROPIC_DEFAULT_HAIKU_MODEL="\${ANTHROPIC_DEFAULT_HAIKU_MODEL:-\$2}"
             export ANTHROPIC_SMALL_FAST_MODEL="\${ANTHROPIC_SMALL_FAST_MODEL:-\$2}"
+            # Persist to config so the title-bar toggle reflects this model
+            # and can be flipped on/off without re-specifying the flag.
+            _cdh_write_backend_cfg true "" "\$2"
             shift 2
             ;;
         --model=*)
@@ -717,6 +905,7 @@ while [[ "\${1:-}" == --* ]]; do
             export ANTHROPIC_DEFAULT_SONNET_MODEL="\${ANTHROPIC_DEFAULT_SONNET_MODEL:-\$_cdh_m}"
             export ANTHROPIC_DEFAULT_HAIKU_MODEL="\${ANTHROPIC_DEFAULT_HAIKU_MODEL:-\$_cdh_m}"
             export ANTHROPIC_SMALL_FAST_MODEL="\${ANTHROPIC_SMALL_FAST_MODEL:-\$_cdh_m}"
+            _cdh_write_backend_cfg true "" "\$_cdh_m"
             unset _cdh_m
             shift
             ;;
@@ -726,10 +915,14 @@ while [[ "\${1:-}" == --* ]]; do
                 exit 1
             fi
             export ANTHROPIC_BASE_URL="\$2"
+            _cdh_write_backend_cfg true "\$2" ""
             shift 2
             ;;
         --base-url=*)
-            export ANTHROPIC_BASE_URL="\${1#--base-url=}"
+            _cdh_u="\${1#--base-url=}"
+            export ANTHROPIC_BASE_URL="\$_cdh_u"
+            _cdh_write_backend_cfg true "\$_cdh_u" ""
+            unset _cdh_u
             shift
             ;;
         --)
