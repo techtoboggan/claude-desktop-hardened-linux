@@ -190,6 +190,19 @@ Point Code / Cowork sessions at your own model backend — a local LLM via **LM 
 
 > **Scope:** this override applies to **Code / Cowork (agent) mode only**. Conversation mode keeps using `claude.ai` because that UI is a hosted web app, not something we can redirect to a different frontend.
 
+### Backend toggle in the title bar
+
+There's a chip in the top-left of the title bar (right next to the Claude icon) that shows which backend your **next Code session** will use:
+
+- 🟢 **green pill** with your model name (e.g. `qwen35-4bit`) → local backend is active
+- ⚪ **neutral pill** reading `Anthropic` → default Anthropic backend
+
+**Hover** for a native tooltip showing the full URL, model, and which source set it (shell env vs config file).
+
+**Click** to toggle between your configured local backend and Anthropic. The flip writes to `~/.config/Claude/custom-backend.json` and takes effect on the **next Code session you start** — already-running sessions keep their original env vars (we don't swap backends mid-conversation, that would break things).
+
+Currently-running Code sessions continue with whatever backend they were spawned with. To fully switch an active session, end it and start a new one.
+
 ### Two ways to configure
 
 **1. CLI flags (quickest for trying it out):**
@@ -202,6 +215,23 @@ claude-desktop-hardened --model claude-sonnet-4-5-20250929 \
 Flags are consumed by the launcher and forwarded as env vars to the Code CLI. They don't get passed to Electron.
 
 > **Tier mapping:** The `--model` flag also sets `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to the same value (unless you've explicitly set those env vars first). This is required because the UI's model picker spawns the CLI with `--model sonnet` (etc.), which would otherwise override your `ANTHROPIC_MODEL`. With tier aliasing, whichever tier you click in the UI resolves to your chosen backend model.
+
+> **Persistence:** `--model` and `--base-url` also write to `~/.config/Claude/custom-backend.json` so the title bar toggle remembers them. Run once with the flags, then toggle on/off from the UI going forward without needing the flags again.
+
+**Keyboard-shortcut-friendly CLI flags:**
+
+```bash
+claude-desktop-hardened --toggle-backend   # flip on/off (binds nicely to a shortcut)
+claude-desktop-hardened --use-local        # force local backend on
+claude-desktop-hardened --use-anthropic    # force Anthropic backend
+```
+
+These exit immediately after updating the config, so you can bind them in your WM / DE:
+
+```bash
+# Hyprland (~/.config/hypr/hyprland.conf)
+bind = SUPER SHIFT, L, exec, claude-desktop-hardened --toggle-backend
+```
 
 **2. Shell env vars (persistent — put in `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`):**
 

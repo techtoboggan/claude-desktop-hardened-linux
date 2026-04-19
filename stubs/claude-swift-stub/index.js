@@ -183,12 +183,65 @@ function isPathAllowed(binaryPath) {
 }
 
 /**
+ * Location of the custom-backend config file.
+ * Single source of truth for the title-bar backend toggle — read at
+ * spawn time (not launch time) so flipping the toggle takes effect on
+ * the next Code session without restarting the app.
+ */
+const BACKEND_CONFIG_PATH = path.join(
+  process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+  'Claude',
+  'custom-backend.json'
+);
+
+/**
+ * Read the custom backend config. Returns defaults if missing/malformed.
+ *
+ * Shape: { enabled: bool, baseUrl, model, authToken, apiKey }
+ *   enabled: true  → inject ANTHROPIC_* env into next spawn
+ *   enabled: false → leave env alone (use upstream Anthropic defaults)
+ *
+ * Shell env always wins over config — if the user exported
+ * ANTHROPIC_BASE_URL manually, we respect it (env > config > default).
+ */
+function readBackendConfig() {
+  try {
+    if (!fs.existsSync(BACKEND_CONFIG_PATH)) return null;
+    const raw = fs.readFileSync(BACKEND_CONFIG_PATH, 'utf8');
+    const cfg = JSON.parse(raw);
+    if (typeof cfg !== 'object' || cfg === null) return null;
+    // Coerce to safe types; reject non-http(s) URLs to avoid weird injection.
+    const result = { enabled: !!cfg.enabled };
+    if (typeof cfg.baseUrl === 'string' && /^https?:\/\//i.test(cfg.baseUrl)) {
+      result.baseUrl = cfg.baseUrl;
+    }
+    if (typeof cfg.model === 'string' && cfg.model.length > 0 && cfg.model.length < 200) {
+      result.model = cfg.model;
+    }
+    if (typeof cfg.authToken === 'string' && cfg.authToken.length < 2048) {
+      result.authToken = cfg.authToken;
+    }
+    if (typeof cfg.apiKey === 'string' && cfg.apiKey.length < 2048) {
+      result.apiKey = cfg.apiKey;
+    }
+    return result;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Filter environment variables through the allowlist.
  *
  * process.env is filtered strictly (only ENV_ALLOWLIST).
  * extraEnv comes from the trusted Electron app session config and is
  * passed through entirely — it contains CLAUDE_CODE_BRIEF, TZ, etc.
  * that the CLI needs but that should not leak from the host env.
+ *
+ * AFTER allowlist filtering, the backend config file is applied on top
+ * IFF the user has toggled it on AND the matching env var wasn't
+ * already provided by the shell. This gives us real-time toggle support
+ * without requiring an app restart — each new spawn re-reads the config.
  */
 function filterEnv(extraEnv = {}) {
   const filtered = {};
@@ -205,6 +258,27 @@ function filterEnv(extraEnv = {}) {
       filtered[key] = value;
     }
   }
+
+  // Apply custom-backend config if toggled on. Shell env wins — we only
+  // fill in vars that the user didn't already set manually.
+  const cfg = readBackendConfig();
+  if (cfg && cfg.enabled) {
+    const setIfUnset = (key, val) => {
+      if (val && filtered[key] === undefined) filtered[key] = val;
+    };
+    setIfUnset('ANTHROPIC_BASE_URL', cfg.baseUrl);
+    setIfUnset('ANTHROPIC_API_KEY', cfg.apiKey);
+    setIfUnset('ANTHROPIC_AUTH_TOKEN', cfg.authToken);
+    if (cfg.model) {
+      setIfUnset('ANTHROPIC_MODEL', cfg.model);
+      // Tier aliasing — see launcher comment about --model behavior.
+      setIfUnset('ANTHROPIC_DEFAULT_OPUS_MODEL', cfg.model);
+      setIfUnset('ANTHROPIC_DEFAULT_SONNET_MODEL', cfg.model);
+      setIfUnset('ANTHROPIC_DEFAULT_HAIKU_MODEL', cfg.model);
+      setIfUnset('ANTHROPIC_SMALL_FAST_MODEL', cfg.model);
+    }
+  }
+
   return filtered;
 }
 
