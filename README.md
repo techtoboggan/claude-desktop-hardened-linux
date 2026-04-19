@@ -201,6 +201,8 @@ claude-desktop-hardened --model claude-sonnet-4-5-20250929 \
 
 Flags are consumed by the launcher and forwarded as env vars to the Code CLI. They don't get passed to Electron.
 
+> **Tier mapping:** The `--model` flag also sets `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to the same value (unless you've explicitly set those env vars first). This is required because the UI's model picker spawns the CLI with `--model sonnet` (etc.), which would otherwise override your `ANTHROPIC_MODEL`. With tier aliasing, whichever tier you click in the UI resolves to your chosen backend model.
+
 **2. Shell env vars (persistent — put in `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`):**
 
 ```bash
@@ -312,6 +314,8 @@ If any `ANTHROPIC_*` env var is set, `--doctor` shows a **Custom Model Backend**
 - **"Cowork session hangs on connect"** — run `--doctor`, confirm reachability. Check firewalls and whether your backend is listening on `0.0.0.0` (not just `127.0.0.1` if you're using a container).
 - **"TLS error"** — local proxies with self-signed certs will fail. Use plain `http://` for loopback, or install the self-signed cert into your system CA store.
 - **"Model name rejected"** — provider model-name formats differ: OpenRouter uses `vendor/model`, Ollama uses `name:tag`, LM Studio wants the exact loaded model's ID string from its server UI.
+- **"401 / 403 from backend"** — if you were logged in via OAuth before, `CLAUDE_CODE_OAUTH_TOKEN` may still be set and the CLI will try to use it against your custom backend. Run `unset CLAUDE_CODE_OAUTH_TOKEN` before launching, or include it in your shell rc file's custom-backend section. `--doctor` will warn when this conflict is detected.
+- **"UI shows Sonnet but my backend model is being used"** — that's expected. The `--model` flag aliases all three tiers (Opus/Sonnet/Haiku) to your model, so the UI picker is effectively cosmetic. Check the backend's access log to confirm traffic is going where you want.
 
 ### Bedrock / Vertex / extra env vars (advanced)
 
