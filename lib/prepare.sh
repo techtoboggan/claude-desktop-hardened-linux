@@ -460,30 +460,42 @@ _capp.on("browser-window-created",(e,w)=>{
       "-webkit-app-region:drag !important;",
       "user-select:none;",
     "}",
-    // Backend mode chip — tiny pill showing which backend Code sessions
-    // will use. no-drag island inside the title bar drag region so clicks
-    // register normally. Hover shows full backend URL / model via native
-    // `title` tooltip.
+    // Backend segmented control — two pills side-by-side (Anthropic |
+    // local-model-name). Active pill is highlighted, inactive is faded.
+    // no-drag island inside the title bar drag region so clicks register
+    // normally. Hover on either pill shows a native tooltip.
     "#_cdh_backend_chip{",
       "position:fixed;top:4px;left:48px;height:32px;",
-      "padding:0 12px;border-radius:16px;",
-      "display:flex;align-items:center;gap:6px;",
-      "font:500 12px/1 system-ui,-apple-system,sans-serif;",
-      "color:rgba(255,255,255,0.92);",
-      "background:rgba(255,255,255,0.08);",
+      "display:flex;align-items:stretch;",
+      "border-radius:16px;overflow:hidden;",
+      "background:rgba(255,255,255,0.06);",
       "border:1px solid rgba(255,255,255,0.12);",
-      "cursor:pointer;user-select:none;",
+      "font:500 12px/1 system-ui,-apple-system,sans-serif;",
+      "user-select:none;",
       "-webkit-app-region:no-drag !important;",
       "z-index:2147483647;",
-      "transition:background .12s ease,border-color .12s ease;",
-      "max-width:200px;",
+      "max-width:320px;",
     "}",
-    "#_cdh_backend_chip:hover{background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.2);}",
-    "#_cdh_backend_chip:active{background:rgba(255,255,255,0.2);}",
-    "#_cdh_backend_chip[data-mode=\"local\"]{",
-      "color:#7ee787;background:rgba(126,231,135,0.12);border-color:rgba(126,231,135,0.25);",
+    "#_cdh_backend_chip .cdh-seg{",
+      "display:flex;align-items:center;gap:6px;",
+      "padding:0 12px;cursor:pointer;",
+      "color:rgba(255,255,255,0.5);",
+      "transition:color .12s ease,background .12s ease;",
     "}",
-    "#_cdh_backend_chip[data-mode=\"local\"]:hover{background:rgba(126,231,135,0.2);}",
+    "#_cdh_backend_chip .cdh-seg:hover{color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);}",
+    // Active state — Anthropic
+    "#_cdh_backend_chip .cdh-seg.cdh-active[data-target=\"anthropic\"]{",
+      "color:#e5c07b;background:rgba(229,192,123,0.15);",
+    "}",
+    // Active state — Local
+    "#_cdh_backend_chip .cdh-seg.cdh-active[data-target=\"local\"]{",
+      "color:#7ee787;background:rgba(126,231,135,0.18);",
+    "}",
+    // Disabled state — Local without config
+    "#_cdh_backend_chip .cdh-seg.cdh-disabled{",
+      "color:rgba(255,255,255,0.25);cursor:help;",
+    "}",
+    "#_cdh_backend_chip .cdh-seg.cdh-disabled:hover{color:rgba(255,255,255,0.4);background:transparent;}",
     "#_cdh_backend_chip .cdh-dot{",
       "width:6px;height:6px;border-radius:50%;",
       "background:currentColor;flex-shrink:0;",
@@ -491,6 +503,9 @@ _capp.on("browser-window-created",(e,w)=>{
     "#_cdh_backend_chip .cdh-label{",
       "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
       "max-width:160px;",
+    "}",
+    "#_cdh_backend_chip .cdh-divider{",
+      "width:1px;background:rgba(255,255,255,0.12);",
     "}",
   ].join("");
 
@@ -522,9 +537,10 @@ _capp.on("browser-window-created",(e,w)=>{
     return{mode:"anthropic"};
   };
 
-  // JS: append icon + chip + drag strip to documentElement. No nav-button
-  // hunt anymore — the body-level padding-top means there's no overlap.
-  // The chip is a no-drag island inside the title bar drag region.
+  // JS: append icon + chip + drag strip to documentElement. The chip is
+  // a segmented control with two pills (Anthropic | local-model). Active
+  // pill is colored, inactive is faded. Click either to switch modes.
+  // Re-inject fully on every call so config-change refreshes update the UI.
   const _bmState=_resolveBackendMode();
   const _bmStateJson=JSON.stringify(_bmState);
   const _js=[
@@ -540,34 +556,76 @@ _capp.on("browser-window-created",(e,w)=>{
         "el.appendChild(img);",
         "document.documentElement.appendChild(el);",
       "}",
-      // Backend chip — created fresh each inject so state updates render.
-      "let chip=document.getElementById('_cdh_backend_chip');",
-      "if(!chip){",
-        "chip=document.createElement('div');",
-        "chip.id='_cdh_backend_chip';",
-        "const dot=document.createElement('span');dot.className='cdh-dot';",
-        "const lbl=document.createElement('span');lbl.className='cdh-label';",
-        "chip.appendChild(dot);chip.appendChild(lbl);",
-        "chip.addEventListener('click',function(e){",
-          "e.stopPropagation();",
-          "console.log('__CDH_TOGGLE_BACKEND__');",
-        "});",
-        "document.documentElement.appendChild(chip);",
-      "}",
-      "const lblEl=chip.querySelector('.cdh-label');",
-      "if(_state.mode==='local'){",
-        "chip.dataset.mode='local';",
-        "lblEl.textContent=_state.model;",
-        "chip.title='Local backend active\\nURL: '+_state.baseUrl+'\\nModel: '+_state.model+'\\nSource: '+(_state.source==='env'?'shell env var':'config file')+'\\nClick to switch to Anthropic (affects next Code session)';",
+      // Backend segmented control — rebuilt fresh on every inject so
+      // re-injections from config changes refresh the visible state.
+      "let oldChip=document.getElementById('_cdh_backend_chip');",
+      "if(oldChip)oldChip.remove();",
+      "const chip=document.createElement('div');",
+      "chip.id='_cdh_backend_chip';",
+
+      // Anthropic segment (always clickable)
+      "const segA=document.createElement('div');",
+      "segA.className='cdh-seg';",
+      "segA.dataset.target='anthropic';",
+      "const dotA=document.createElement('span');dotA.className='cdh-dot';",
+      "const lblA=document.createElement('span');lblA.className='cdh-label';",
+      "lblA.textContent='Anthropic';",
+      "segA.appendChild(dotA);segA.appendChild(lblA);",
+
+      "const divider=document.createElement('div');",
+      "divider.className='cdh-divider';",
+
+      // Local segment (disabled if no config)
+      "const segL=document.createElement('div');",
+      "segL.className='cdh-seg';",
+      "segL.dataset.target='local';",
+      "const dotL=document.createElement('span');dotL.className='cdh-dot';",
+      "const lblL=document.createElement('span');lblL.className='cdh-label';",
+      "const hasLocal=_state.mode==='local'||!!_state.configured;",
+      "const localModel=_state.mode==='local'?_state.model:(_state.configured&&_state.configured.model)||'Local';",
+      "lblL.textContent=hasLocal?localModel:'Local (not set)';",
+      "segL.appendChild(dotL);segL.appendChild(lblL);",
+
+      // Mark active / disabled
+      "if(_state.mode==='anthropic'){",
+        "segA.classList.add('cdh-active');",
+        "if(!hasLocal)segL.classList.add('cdh-disabled');",
       "}else{",
-        "chip.dataset.mode='anthropic';",
-        "lblEl.textContent='Anthropic';",
-        "if(_state.configured){",
-          "chip.title='Anthropic (default)\\nClick to switch to local: '+_state.configured.model+' @ '+_state.configured.baseUrl+'\\nAffects next Code session';",
-        "}else{",
-          "chip.title='Anthropic (default)\\nNo local backend configured.\\nSet with: claude-desktop-hardened --model NAME --base-url URL';",
-        "}",
+        "segL.classList.add('cdh-active');",
       "}",
+
+      // Tooltips
+      "if(_state.mode==='anthropic'){",
+        "segA.title='Active: Anthropic (default)';",
+        "segL.title=hasLocal?",
+          "('Switch to local: '+localModel+' @ '+(_state.configured&&_state.configured.baseUrl||'')+' (applies to next Code session)'):",
+          "'No local backend configured yet.\\nSet up with:\\n  claude-desktop-hardened --model NAME --base-url URL';",
+      "}else{",
+        "segL.title='Active: '+localModel+' @ '+_state.baseUrl+'\\nSource: '+(_state.source==='env'?'shell env var':'config file');",
+        "segA.title='Switch to Anthropic (applies to next Code session)';",
+      "}",
+
+      // Click handlers — only if action would actually change state
+      "segA.addEventListener('click',function(e){",
+        "e.stopPropagation();",
+        "if(_state.mode==='anthropic')return;",
+        "console.log('__CDH_BACKEND_SET__anthropic');",
+      "});",
+      "segL.addEventListener('click',function(e){",
+        "e.stopPropagation();",
+        "if(!hasLocal){",
+          "console.log('__CDH_BACKEND_INFO__no-local-config');",
+          "return;",
+        "}",
+        "if(_state.mode==='local')return;",
+        "console.log('__CDH_BACKEND_SET__local');",
+      "});",
+
+      "chip.appendChild(segA);",
+      "chip.appendChild(divider);",
+      "chip.appendChild(segL);",
+      "document.documentElement.appendChild(chip);",
+
       // Drag edge
       "if(!document.getElementById('_cld_drag_edge')){",
         "const edge=document.createElement('div');",
@@ -592,30 +650,62 @@ _capp.on("browser-window-created",(e,w)=>{
   // sits behind the window controls.
   try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
 
-  // Backend toggle: renderer chip fires console sentinel, main flips the
-  // config file + re-injects the updated chip. Already-running Code
-  // sessions keep their original env — the flip only affects future
-  // spawns via the stub's dynamic filterEnv() lookup.
-  w.webContents.on("console-message",(...args)=>{
-    const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
-    if(msg!=="__CDH_TOGGLE_BACKEND__")return;
+  // Backend segmented control: renderer fires one of two sentinels
+  //   __CDH_BACKEND_SET__anthropic
+  //   __CDH_BACKEND_SET__local
+  // main flips the config's `enabled` accordingly and re-injects the chip.
+  // Already-running Code sessions keep their original env — the flip only
+  // affects future spawns via the stub's dynamic filterEnv() lookup.
+  const _cdhBackendCfgPath=require("path").join(
+    process.env.XDG_CONFIG_HOME||require("path").join(require("os").homedir(),".config"),
+    "Claude","custom-backend.json"
+  );
+  const _cdhSetBackend=(target)=>{
     try{
-      const cfgPath=require("path").join(
-        process.env.XDG_CONFIG_HOME||require("path").join(require("os").homedir(),".config"),
-        "Claude","custom-backend.json"
-      );
       let cfg={};
-      try{cfg=JSON.parse(require("fs").readFileSync(cfgPath,"utf8"));}catch(_){}
-      cfg.enabled=!cfg.enabled;
-      require("fs").mkdirSync(require("path").dirname(cfgPath),{recursive:true});
-      require("fs").writeFileSync(cfgPath,JSON.stringify(cfg,null,2));
-      console.log("[cowork-linux] Backend toggled →",cfg.enabled?"local":"anthropic","(next Code session picks this up)");
-      // Re-inject the chip so it reflects the new state.
+      try{cfg=JSON.parse(require("fs").readFileSync(_cdhBackendCfgPath,"utf8"));}catch(_){}
+      const want=target==="local";
+      if(cfg.enabled===want)return;// already in that state
+      cfg.enabled=want;
+      require("fs").mkdirSync(require("path").dirname(_cdhBackendCfgPath),{recursive:true});
+      require("fs").writeFileSync(_cdhBackendCfgPath,JSON.stringify(cfg,null,2));
+      console.log("[cowork-linux] Backend →",want?"local":"anthropic","(next Code session picks this up)");
       inject();
     }catch(ex){
-      console.error("[cowork-linux] Backend toggle failed:",ex.message);
+      console.error("[cowork-linux] Backend set failed:",ex.message);
+    }
+  };
+  w.webContents.on("console-message",(...args)=>{
+    const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
+    if(msg==="__CDH_BACKEND_SET__anthropic")_cdhSetBackend("anthropic");
+    else if(msg==="__CDH_BACKEND_SET__local")_cdhSetBackend("local");
+    else if(msg==="__CDH_BACKEND_INFO__no-local-config"){
+      console.log("[cowork-linux] No local backend configured — run: claude-desktop-hardened --model NAME --base-url URL");
     }
   });
+
+  // Real-time refresh: watch the config file so external edits
+  // (--use-local from another shell, direct JSON edit, etc.) update
+  // the chip in the running app without needing a restart.
+  try{
+    const _fs=require("fs");
+    _fs.mkdirSync(require("path").dirname(_cdhBackendCfgPath),{recursive:true});
+    // Touch the file so fs.watch has something to watch even before config exists.
+    if(!_fs.existsSync(_cdhBackendCfgPath)){
+      _fs.writeFileSync(_cdhBackendCfgPath,JSON.stringify({enabled:false},null,2));
+    }
+    let _cdhRefreshTimer=null;
+    const _cdhWatcher=_fs.watch(_cdhBackendCfgPath,{persistent:false},()=>{
+      // Debounce — file writers often fire multiple events in quick succession.
+      clearTimeout(_cdhRefreshTimer);
+      _cdhRefreshTimer=setTimeout(()=>{
+        if(!w.isDestroyed())inject();
+      },100);
+    });
+    w.on("closed",()=>{try{_cdhWatcher.close();}catch(_){}});
+  }catch(ex){
+    console.log("[cowork-linux] Backend config watcher setup failed (non-fatal):",ex.message);
+  }
 });
 PREPENDJS
         cat /tmp/claude-prepend.js "$MAIN_JS" > /tmp/claude-combined.js
