@@ -192,16 +192,49 @@ Point Code / Cowork sessions at your own model backend — a local LLM via **LM 
 
 ### Backend toggle in the title bar
 
-There's a chip in the top-left of the title bar (right next to the Claude icon) that shows which backend your **next Code session** will use:
+There's a segmented chip in the top-left of the title bar (right next to the Claude icon) showing both backend options side-by-side. The active one is highlighted, the other is faded:
 
-- 🟢 **green pill** with your model name (e.g. `qwen35-4bit`) → local backend is active
-- ⚪ **neutral pill** reading `Anthropic` → default Anthropic backend
+```
+[ Anthropic | qwen35-4bit ]
+```
 
-**Hover** for a native tooltip showing the full URL, model, and which source set it (shell env vs config file).
+- 🟢 **green** pill = local backend active
+- 🟡 **amber** pill = Anthropic (default) active
+- ⚫ **dim "Local (not set)"** = no local backend configured yet
 
-**Click** to toggle between your configured local backend and Anthropic. The flip writes to `~/.config/Claude/custom-backend.json` and takes effect on the **next Code session you start** — already-running sessions keep their original env vars (we don't swap backends mid-conversation, that would break things).
+**Hover** for a native tooltip with the full URL, model, and source (shell env vs config file). **Click** either pill to switch — the new backend applies to the **next Code session you start**. Currently-running sessions keep their original env vars (we don't swap mid-conversation).
 
-Currently-running Code sessions continue with whatever backend they were spawned with. To fully switch an active session, end it and start a new one.
+**Real-time refresh:** changes from `--use-local` / `--toggle-backend` / direct JSON edits to `~/.config/Claude/custom-backend.json` update the chip in the running app immediately (we `fs.watch` the file).
+
+### Third-Party Inference setup (conversation mode too!) 🎉
+
+Recent Claude Desktop builds ship a **hidden third-party model provider setup window** — full OAuth + MCP integration that affects both conversation and Code modes. It's gated in the upstream Help menu behind a dev settings flag, but **our title bar chip bypasses the gate**: click the dim "Local (not set)" pill, or right-click either pill, to open the setup window directly.
+
+The setup window (900×720) is Anthropic's own UI for configuring custom inference providers. It handles:
+
+- **OAuth flow** for providers that require it (with HTTPS enforcement and encrypted token storage)
+- **Enterprise config** schema for BYOK deployments
+- **Custom HTTP headers** per provider
+- **MCP-based integration** so the app's normal tool + model pipeline routes through your provider
+
+This is **Anthropic-authored infrastructure** — no reverse engineering, just flipping a flag they already built. Unlike our env-var-only override (which only affects Code mode), configuring a provider here makes **conversation mode use your backend too**.
+
+> ⚠️ This is a hidden feature that Anthropic hasn't officially launched. No TODOs or "experimental" gates in the code, but treat it as unofficial: Anthropic could change the setup flow, config format, or remove the feature in a future release.
+
+**Alternative access paths:**
+
+```bash
+# Unlock the upstream menu item (Help → Configure Third-Party Inference…).
+# Requires app restart. Not needed if you use the chip — just a convenience
+# if you prefer the menu.
+claude-desktop-hardened --enable-third-party-setup
+```
+
+Or edit `~/.config/Claude/developer_settings.json` directly:
+
+```json
+{ "allowDevTools": true }
+```
 
 ### Two ways to configure
 

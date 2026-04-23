@@ -598,14 +598,16 @@ _capp.on("browser-window-created",(e,w)=>{
       "if(_state.mode==='anthropic'){",
         "segA.title='Active: Anthropic (default)';",
         "segL.title=hasLocal?",
-          "('Switch to local: '+localModel+' @ '+(_state.configured&&_state.configured.baseUrl||'')+' (applies to next Code session)'):",
-          "'No local backend configured yet.\\nSet up with:\\n  claude-desktop-hardened --model NAME --base-url URL';",
+          "('Switch to local: '+localModel+' @ '+(_state.configured&&_state.configured.baseUrl||'')+' (applies to next Code session)\\nRight-click to open the Third-Party Inference setup'):",
+          "'No local backend configured yet.\\nClick to open the Third-Party Inference setup (enables conversation mode too)\\nOr: claude-desktop-hardened --model NAME --base-url URL (Code mode only)';",
       "}else{",
-        "segL.title='Active: '+localModel+' @ '+_state.baseUrl+'\\nSource: '+(_state.source==='env'?'shell env var':'config file');",
+        "segL.title='Active: '+localModel+' @ '+_state.baseUrl+'\\nSource: '+(_state.source==='env'?'shell env var':'config file')+'\\nRight-click to re-open setup';",
         "segA.title='Switch to Anthropic (applies to next Code session)';",
       "}",
 
-      // Click handlers — only if action would actually change state
+      // Click handlers — only if action would actually change state.
+      // Right-click (or click on \"Local (not set)\") opens the hidden
+      // Third-Party Inference setup window baked into Claude Desktop.
       "segA.addEventListener('click',function(e){",
         "e.stopPropagation();",
         "if(_state.mode==='anthropic')return;",
@@ -614,12 +616,18 @@ _capp.on("browser-window-created",(e,w)=>{
       "segL.addEventListener('click',function(e){",
         "e.stopPropagation();",
         "if(!hasLocal){",
-          "console.log('__CDH_BACKEND_INFO__no-local-config');",
+          // Not set — open the upstream 3P setup directly.
+          "console.log('__CDH_OPEN_3P_SETUP__');",
           "return;",
         "}",
         "if(_state.mode==='local')return;",
         "console.log('__CDH_BACKEND_SET__local');",
       "});",
+      // Right-click on either segment opens the 3P setup — lets users
+      // re-configure their provider any time without having to undo state.
+      "const _open3p=function(e){e.preventDefault();e.stopPropagation();console.log('__CDH_OPEN_3P_SETUP__');};",
+      "segA.addEventListener('contextmenu',_open3p);",
+      "segL.addEventListener('contextmenu',_open3p);",
 
       "chip.appendChild(segA);",
       "chip.appendChild(divider);",
@@ -675,10 +683,54 @@ _capp.on("browser-window-created",(e,w)=>{
       console.error("[cowork-linux] Backend set failed:",ex.message);
     }
   };
+  // Open Claude Desktop's hidden "Configure Third-Party Inference"
+  // setup window. This is upstream infrastructure (gated in the menu
+  // behind developer_settings.json { allowDevTools: true }) that
+  // configures custom model providers via OAuth + MCP — affects both
+  // conversation mode AND code mode, unlike our env-var-only override.
+  //
+  // We bypass the menu gate by creating the window directly with the
+  // same URL the app uses internally (netezza://localhost/setup-desktop-3p).
+  // The netezza:// protocol handler and the shared preload are both
+  // registered by the app's main at boot regardless of allowDevTools,
+  // so this works even without the dev-settings flag.
+  let _cdh3pSetupWin=null;
+  const _cdhOpen3pSetup=()=>{
+    try{
+      if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
+        _cdh3pSetupWin.show();
+        _cdh3pSetupWin.focus();
+        return;
+      }
+      const{BrowserWindow:_BW,app:_app}=require("electron");
+      const _pa=require("path");
+      const _fsM=require("fs");
+      const _preload=_pa.join(_app.getAppPath(),".vite","build","mainView.js");
+      _cdh3pSetupWin=new _BW({
+        width:900,height:720,
+        minWidth:720,minHeight:560,
+        autoHideMenuBar:true,
+        title:"Configure Third-Party Inference",
+        webPreferences:{
+          preload:_fsM.existsSync(_preload)?_preload:undefined,
+          contextIsolation:true,
+          nodeIntegration:false,
+          sandbox:false,
+        },
+      });
+      _cdh3pSetupWin.loadURL("netezza://localhost/setup-desktop-3p");
+      _cdh3pSetupWin.on("closed",()=>{_cdh3pSetupWin=null;});
+      console.log("[cowork-linux] Opened Third-Party Inference setup window");
+    }catch(ex){
+      console.error("[cowork-linux] Failed to open 3P setup:",ex.message);
+    }
+  };
+
   w.webContents.on("console-message",(...args)=>{
     const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
     if(msg==="__CDH_BACKEND_SET__anthropic")_cdhSetBackend("anthropic");
     else if(msg==="__CDH_BACKEND_SET__local")_cdhSetBackend("local");
+    else if(msg==="__CDH_OPEN_3P_SETUP__")_cdhOpen3pSetup();
     else if(msg==="__CDH_BACKEND_INFO__no-local-config"){
       console.log("[cowork-linux] No local backend configured — run: claude-desktop-hardened --model NAME --base-url URL");
     }
@@ -966,6 +1018,34 @@ print('Affects the next Code session you start; current sessions keep their env.
             # Explicitly revert to Anthropic upstream.
             _cdh_write_backend_cfg false "" ""
             echo "Backend → Anthropic"
+            exit 0
+            ;;
+        --enable-third-party-setup)
+            # Flip the hidden \`allowDevTools\` flag in developer_settings.json,
+            # which surfaces the upstream "Configure Third-Party Inference…"
+            # menu item (Help menu). Our title-bar chip can open the same
+            # window directly without this flag, so this is mostly for users
+            # who prefer the menu.
+            DEV_SETTINGS="\${XDG_CONFIG_HOME:-\$HOME/.config}/Claude/developer_settings.json"
+            mkdir -p "\$(dirname "\$DEV_SETTINGS")"
+            if command -v python3 >/dev/null 2>&1; then
+                python3 -c "
+import json, os
+p = '\$DEV_SETTINGS'
+cfg = {}
+if os.path.exists(p):
+    try:
+        with open(p) as f: cfg = json.load(f) or {}
+    except: pass
+cfg['allowDevTools'] = True
+with open(p, 'w') as f: json.dump(cfg, f, indent=2)
+print('Enabled upstream Third-Party Inference menu item.')
+print('Restart Claude Desktop to see it in the Help menu.')
+print('(You can also click \"Local (not set)\" in the title bar chip — no restart needed.)')"
+            else
+                echo "Error: python3 required" >&2
+                exit 1
+            fi
             exit 0
             ;;
         --model)
