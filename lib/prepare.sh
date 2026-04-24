@@ -684,17 +684,54 @@ _capp.on("browser-window-created",(e,w)=>{
     }
   };
   // Open Claude Desktop's hidden "Configure Third-Party Inference"
-  // setup window. This is upstream infrastructure (gated in the menu
-  // behind developer_settings.json { allowDevTools: true }) that
-  // configures custom model providers via OAuth + MCP — affects both
-  // conversation mode AND code mode, unlike our env-var-only override.
+  // setup window. Upstream shipped all the BACKEND infrastructure for
+  // this feature (OAuth, MCP integration, protocol handler, window
+  // opener) but public builds don't yet include the UI bundle itself
+  // (resources/ion-dist/). So we detect:
   //
-  // We bypass the menu gate by creating the window directly with the
-  // same URL the app uses internally (netezza://localhost/setup-desktop-3p).
-  // The netezza:// protocol handler and the shared preload are both
-  // registered by the app's main at boot regardless of allowDevTools,
-  // so this works even without the dev-settings flag.
+  //   - If ion-dist/index.html exists → load the real setup UI. The
+  //     moment Anthropic ships the bundle in a future update, users
+  //     get the feature with zero code changes on our side.
+  //   - If it's missing → load a small fallback page that explains
+  //     the state and points to what works today (--model / --base-url
+  //     for Code mode). Beats an opaque blank window.
   let _cdh3pSetupWin=null;
+  const _cdh3pFallbackHtml=`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Configure Third-Party Inference</title>
+<style>
+:root{color-scheme:dark}
+body{background:#1b1b1b;color:#e5e5e5;font:14px/1.55 system-ui,-apple-system,sans-serif;margin:0;padding:40px;min-height:100vh;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.card{max-width:560px;background:#262626;border:1px solid #3a3a3a;border-radius:10px;padding:32px 36px;box-shadow:0 8px 32px rgba(0,0,0,0.35)}
+.badge{display:inline-block;padding:3px 10px;background:rgba(229,192,123,0.14);color:#e5c07b;border-radius:12px;font-size:11px;font-weight:500;letter-spacing:0.02em;margin-bottom:14px}
+h1{margin:0 0 10px;font-size:20px;font-weight:600;color:#fafafa}
+h2{margin:28px 0 8px;font-size:13px;font-weight:600;color:#7ee787;text-transform:uppercase;letter-spacing:0.04em}
+p{margin:10px 0;color:#c0c0c0}
+code{background:#0f0f0f;padding:2px 7px;border-radius:4px;color:#e5c07b;font:12px "SF Mono",Monaco,Menlo,monospace}
+pre{background:#0f0f0f;padding:14px 18px;border-radius:6px;overflow-x:auto;font:12px "SF Mono",Monaco,Menlo,monospace;color:#e5e5e5;margin:12px 0}
+.muted{margin-top:24px;font-size:12px;color:#707070}
+a{color:#7ee787;text-decoration:none}
+a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="card">
+<span class="badge">Preview feature · UI not yet shipped</span>
+<h1>Third-Party Inference setup</h1>
+<p>Claude Desktop has all the backend infrastructure for custom model providers — OAuth, MCP integration, secure token storage — but the setup UI itself (the <code>ion-dist</code> bundle) isn't included in public builds yet.</p>
+<p>When Anthropic ships the UI in a future update, <strong>this window will automatically load the real thing</strong> — no action needed on your side. We detect the bundle's presence at open time.</p>
+<h2>What works today</h2>
+<p>Code / Cowork sessions already honor a custom backend. Set it up via the title-bar chip, or from the CLI:</p>
+<pre>claude-desktop-hardened --model YOUR_MODEL --base-url http://your-backend:PORT</pre>
+<p>Then click the <strong>qwen35-4bit</strong>-style pill in the title bar to toggle between Anthropic and your local backend for new Code sessions.</p>
+<h2>What still needs upstream</h2>
+<p><strong>Conversation mode</strong> stays on <code>claude.ai</code> until this setup UI ships. That mode uses claude.ai's hosted frontend — our env-var override doesn't reach it.</p>
+<p class="muted">See <a href="https://github.com/techtoboggan/claude-desktop-hardened-linux#using-a-custom-model-backend" target="_blank">README → Using a custom model backend</a> for details.</p>
+</div>
+</body>
+</html>`;
   const _cdhOpen3pSetup=()=>{
     try{
       if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
@@ -706,21 +743,37 @@ _capp.on("browser-window-created",(e,w)=>{
       const _pa=require("path");
       const _fsM=require("fs");
       const _preload=_pa.join(_app.getAppPath(),".vite","build","mainView.js");
+
+      // Detect if upstream has shipped the ion-dist UI bundle.
+      // resourcesPath on packaged Linux = the dir containing app.asar.
+      const _resPath=process.resourcesPath||_pa.dirname(_app.getAppPath());
+      const _ionIdx=_pa.join(_resPath,"ion-dist","index.html");
+      const _bundleShipped=_fsM.existsSync(_ionIdx);
+
       _cdh3pSetupWin=new _BW({
         width:900,height:720,
         minWidth:720,minHeight:560,
         autoHideMenuBar:true,
         title:"Configure Third-Party Inference",
         webPreferences:{
-          preload:_fsM.existsSync(_preload)?_preload:undefined,
+          // Only attach the upstream preload if we're loading the real UI.
+          // The fallback page is a simple static HTML that doesn't need it
+          // and attaching it risks CSP / context-isolation surprises.
+          preload:(_bundleShipped&&_fsM.existsSync(_preload))?_preload:undefined,
           contextIsolation:true,
           nodeIntegration:false,
           sandbox:false,
         },
       });
-      _cdh3pSetupWin.loadURL("netezza://localhost/setup-desktop-3p");
+
+      if(_bundleShipped){
+        _cdh3pSetupWin.loadURL("netezza://localhost/setup-desktop-3p");
+        console.log("[cowork-linux] Opened Third-Party Inference setup (official UI at "+_ionIdx+")");
+      }else{
+        _cdh3pSetupWin.loadURL("data:text/html;charset=utf-8,"+encodeURIComponent(_cdh3pFallbackHtml));
+        console.log("[cowork-linux] Opened 3P setup fallback (ion-dist not found at "+_ionIdx+")");
+      }
       _cdh3pSetupWin.on("closed",()=>{_cdh3pSetupWin=null;});
-      console.log("[cowork-linux] Opened Third-Party Inference setup window");
     }catch(ex){
       console.error("[cowork-linux] Failed to open 3P setup:",ex.message);
     }
