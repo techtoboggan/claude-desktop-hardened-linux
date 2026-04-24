@@ -646,6 +646,10 @@ _capp.on("browser-window-created",(e,w)=>{
   const inject=()=>{
     const b=w.getBounds();
     if(b.width<500||b.height<300)return;
+    // Sub-windows opened by us (e.g. the 3P setup fallback) tag themselves
+    // with __cdhSkipInject so we don't paint the title-bar chip/icon into
+    // them — those belong to the MAIN claude.ai window only.
+    if(w.__cdhSkipInject)return;
     w.webContents.insertCSS(_css).catch(()=>{});
     w.webContents.executeJavaScript(_js).catch(()=>{});
   };
@@ -655,8 +659,11 @@ _capp.on("browser-window-created",(e,w)=>{
 
   // Permanent 40px title bar at the top of the window. The asar patch
   // shifts Claude's WebContentsView down by 40px so nothing in the app
-  // sits behind the window controls.
-  try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
+  // sits behind the window controls. Skip for our own sub-windows —
+  // they use native frame + title, no overlay.
+  if(!w.__cdhSkipInject){
+    try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
+  }
 
   // Backend segmented control: renderer fires one of two sentinels
   //   __CDH_BACKEND_SET__anthropic
@@ -742,6 +749,7 @@ a:hover{text-decoration:underline}
       const{BrowserWindow:_BW,app:_app}=require("electron");
       const _pa=require("path");
       const _fsM=require("fs");
+      const _os=require("os");
       const _preload=_pa.join(_app.getAppPath(),".vite","build","mainView.js");
 
       // Detect if upstream has shipped the ion-dist UI bundle.
@@ -757,8 +765,8 @@ a:hover{text-decoration:underline}
         title:"Configure Third-Party Inference",
         webPreferences:{
           // Only attach the upstream preload if we're loading the real UI.
-          // The fallback page is a simple static HTML that doesn't need it
-          // and attaching it risks CSP / context-isolation surprises.
+          // The fallback page is static HTML that doesn't need it, and
+          // attaching it risks CSP / context-isolation surprises.
           preload:(_bundleShipped&&_fsM.existsSync(_preload))?_preload:undefined,
           contextIsolation:true,
           nodeIntegration:false,
@@ -766,13 +774,36 @@ a:hover{text-decoration:underline}
         },
       });
 
+      // Tag the window so the main browser-window-created injector knows
+      // to skip the title-bar chip / icon — those are for the MAIN app
+      // window only, not sub-windows like this setup page.
+      _cdh3pSetupWin.__cdhSkipInject=true;
+
       if(_bundleShipped){
         _cdh3pSetupWin.loadURL("netezza://localhost/setup-desktop-3p");
         console.log("[cowork-linux] Opened Third-Party Inference setup (official UI at "+_ionIdx+")");
       }else{
-        _cdh3pSetupWin.loadURL("data:text/html;charset=utf-8,"+encodeURIComponent(_cdh3pFallbackHtml));
-        console.log("[cowork-linux] Opened 3P setup fallback (ion-dist not found at "+_ionIdx+")");
+        // Serve the fallback from a temp file instead of a data: URL —
+        // data URLs have an opaque origin and some Electron/Chromium
+        // configurations apply a restrictive default CSP that silently
+        // blocks inline styles. File URLs don't have that problem.
+        const _tmpHtml=_pa.join(_os.tmpdir(),"cdh-3p-fallback-"+process.pid+".html");
+        try{
+          _fsM.writeFileSync(_tmpHtml,_cdh3pFallbackHtml,"utf8");
+          _cdh3pSetupWin.loadURL("file://"+_tmpHtml);
+          console.log("[cowork-linux] Opened 3P setup fallback (ion-dist not found at "+_ionIdx+") — served from "+_tmpHtml);
+        }catch(writeEx){
+          // Write failed — fall back to data: URL as a last resort.
+          console.warn("[cowork-linux] Temp file write failed, using data: URL:",writeEx.message);
+          _cdh3pSetupWin.loadURL("data:text/html;charset=utf-8,"+encodeURIComponent(_cdh3pFallbackHtml));
+        }
+        // Clean up the temp file when the window closes.
+        _cdh3pSetupWin.on("closed",()=>{try{_fsM.unlinkSync(_tmpHtml);}catch(_){}});
       }
+      // Log any load failures so we can diagnose blank-window cases.
+      _cdh3pSetupWin.webContents.on("did-fail-load",(e,code,desc,url)=>{
+        console.error("[cowork-linux] 3P setup page failed to load:",code,desc,url);
+      });
       _cdh3pSetupWin.on("closed",()=>{_cdh3pSetupWin=null;});
     }catch(ex){
       console.error("[cowork-linux] Failed to open 3P setup:",ex.message);
