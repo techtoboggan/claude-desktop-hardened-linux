@@ -702,43 +702,363 @@ _capp.on("browser-window-created",(e,w)=>{
   //   - If it's missing → load a small fallback page that explains
   //     the state and points to what works today (--model / --base-url
   //     for Code mode). Beats an opaque blank window.
+  // ===== Third-Party Inference setup window =====
+  //
+  // Anthropic shipped the BACKEND infrastructure for third-party providers
+  // (OAuth, MCP, schema validation in main process) but doesn't include
+  // the ion-dist UI bundle in public builds. So we build our own setup
+  // UI that writes to claude_desktop_config.json using the schema we
+  // reverse-engineered from .vite/build/index.js:
+  //
+  //   { deploymentMode: "3p" | "1p",
+  //     enterpriseConfig: {
+  //       inferenceProvider: "gateway" | "bedrock" | "vertex" | "foundry",
+  //       inferenceGatewayBaseUrl: "...",
+  //       inferenceGatewayApiKey: "...",
+  //       inferenceGatewayAuthScheme: "auto" | "x-api-key" | "bearer" | "sso"
+  //     } }
+  //
+  // When deploymentMode === "3p", Claude Desktop sets ANTHROPIC_BASE_URL
+  // to the gateway URL, switches CLAUDE_CODE_ENTRYPOINT to
+  // "claude-desktop-3p", disables telemetry/feedback/growthbook, and
+  // routes BOTH conversation mode AND code mode through the gateway.
+  //
+  // If Anthropic ever ships ion-dist/ themselves, we auto-defer to their
+  // UI instead of ours — same window, different content source.
+
   let _cdh3pSetupWin=null;
-  const _cdh3pFallbackHtml=`<!DOCTYPE html>
-<html>
+
+  // Path to the user's claude_desktop_config.json — the source of truth.
+  const _cdh3pCfgPath=require("path").join(
+    require("electron").app.getPath("userData"),
+    "claude_desktop_config.json"
+  );
+
+  const _cdh3pReadCfg=()=>{
+    try{
+      const raw=require("fs").readFileSync(_cdh3pCfgPath,"utf8");
+      return JSON.parse(raw);
+    }catch(_){return{};}
+  };
+
+  const _cdh3pWriteCfg=(cfg)=>{
+    const _fsW=require("fs");
+    // Back up before overwriting — the user's MCP config and preferences
+    // live in this file too, so a bad merge would be very bad.
+    try{
+      if(_fsW.existsSync(_cdh3pCfgPath)){
+        _fsW.copyFileSync(_cdh3pCfgPath,_cdh3pCfgPath+".bak");
+      }
+    }catch(_){}
+    _fsW.mkdirSync(require("path").dirname(_cdh3pCfgPath),{recursive:true});
+    _fsW.writeFileSync(_cdh3pCfgPath,JSON.stringify(cfg,null,2),"utf8");
+  };
+
+  // ----- Preload script (runs in the setup window's renderer) -----
+  // Uses contextBridge so the page can call window.cdh3p.* without
+  // contextIsolation surprises.
+  const _cdh3pPreloadJs=
+    "const{contextBridge,ipcRenderer}=require('electron');\n"+
+    "contextBridge.exposeInMainWorld('cdh3p',{\n"+
+    "  getConfig:()=>ipcRenderer.invoke('cdh-3p:get-config'),\n"+
+    "  saveAndRestart:(cfg)=>ipcRenderer.invoke('cdh-3p:save-restart',cfg),\n"+
+    "  disableAndRestart:()=>ipcRenderer.invoke('cdh-3p:disable-restart'),\n"+
+    "  testConnection:(p)=>ipcRenderer.invoke('cdh-3p:test',p),\n"+
+    "  close:()=>ipcRenderer.invoke('cdh-3p:close'),\n"+
+    "});\n";
+
+  // ----- Setup HTML page -----
+  // Dark theme matching Claude Desktop's aesthetic. Self-contained:
+  // inline CSS + inline script. Talks to main via window.cdh3p (exposed
+  // by the preload above).
+  const _cdh3pSetupHtml=`<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Configure Third-Party Inference</title>
 <style>
-:root{color-scheme:dark}
-body{background:#1b1b1b;color:#e5e5e5;font:14px/1.55 system-ui,-apple-system,sans-serif;margin:0;padding:40px;min-height:100vh;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
-.card{max-width:560px;background:#262626;border:1px solid #3a3a3a;border-radius:10px;padding:32px 36px;box-shadow:0 8px 32px rgba(0,0,0,0.35)}
-.badge{display:inline-block;padding:3px 10px;background:rgba(229,192,123,0.14);color:#e5c07b;border-radius:12px;font-size:11px;font-weight:500;letter-spacing:0.02em;margin-bottom:14px}
-h1{margin:0 0 10px;font-size:20px;font-weight:600;color:#fafafa}
-h2{margin:28px 0 8px;font-size:13px;font-weight:600;color:#7ee787;text-transform:uppercase;letter-spacing:0.04em}
-p{margin:10px 0;color:#c0c0c0}
-code{background:#0f0f0f;padding:2px 7px;border-radius:4px;color:#e5c07b;font:12px "SF Mono",Monaco,Menlo,monospace}
-pre{background:#0f0f0f;padding:14px 18px;border-radius:6px;overflow-x:auto;font:12px "SF Mono",Monaco,Menlo,monospace;color:#e5e5e5;margin:12px 0}
-.muted{margin-top:24px;font-size:12px;color:#707070}
-a{color:#7ee787;text-decoration:none}
-a:hover{text-decoration:underline}
+  :root{color-scheme:dark;--bg:#1a1a1a;--surface:#222;--surface-2:#2a2a2a;--border:#383838;--text:#e8e8e8;--text-dim:#9c9c9c;--text-faint:#6a6a6a;--accent:#d97757;--accent-dim:rgba(217,119,87,0.18);--ok:#7ee787;--ok-dim:rgba(126,231,135,0.16);--err:#f87171;--err-dim:rgba(248,113,113,0.16);--input:#161616;}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;height:100vh;overflow:hidden;}
+  body{display:flex;flex-direction:column;}
+  header{padding:20px 32px 16px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  header h1{margin:0;font-size:18px;font-weight:600;letter-spacing:-0.01em;display:flex;align-items:center;gap:10px;}
+  header h1::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);}
+  header p{margin:6px 0 0;font-size:13px;color:var(--text-dim);}
+  main{flex:1;overflow-y:auto;padding:24px 32px;}
+  footer{padding:16px 32px;border-top:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:12px;flex-shrink:0;}
+  footer .spacer{flex:1}
+  .status-banner{margin-bottom:24px;padding:12px 16px;border-radius:8px;display:flex;align-items:center;gap:10px;font-size:13px;}
+  .status-banner .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .status-banner.anthropic{background:rgba(229,192,123,0.12);color:#e5c07b;}
+  .status-banner.anthropic .dot{background:#e5c07b;}
+  .status-banner.local{background:var(--ok-dim);color:var(--ok);}
+  .status-banner.local .dot{background:var(--ok);}
+  h2{margin:0 0 14px;font-size:11px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.08em;}
+  section{margin-bottom:28px;}
+  .provider-card{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);transition:border-color .12s,background .12s;margin-bottom:8px;}
+  .provider-card:hover{border-color:#4a4a4a;}
+  .provider-card.selected{border-color:var(--accent);background:var(--accent-dim);}
+  .provider-card.disabled{opacity:0.5;cursor:not-allowed;}
+  .provider-card input[type=radio]{margin:2px 0 0;accent-color:var(--accent);flex-shrink:0;}
+  .provider-card .pc-body{flex:1;}
+  .provider-card .pc-title{font-weight:500;color:var(--text);margin:0 0 2px;}
+  .provider-card .pc-desc{font-size:12px;color:var(--text-dim);margin:0;}
+  .provider-card .pc-note{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  .field{margin-bottom:18px;}
+  .field label{display:block;font-size:12px;font-weight:500;color:var(--text-dim);margin-bottom:6px;}
+  .field input[type=text],.field input[type=url],.field input[type=password],.field select{width:100%;padding:9px 12px;background:var(--input);color:var(--text);border:1px solid var(--border);border-radius:6px;font:13px/1.4 system-ui,sans-serif;font-family:inherit;}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent);}
+  .field .hint{font-size:11px;color:var(--text-faint);margin-top:5px;}
+  .field-row{display:flex;gap:10px;align-items:center;}
+  .field-row > input{flex:1;}
+  .auth-radios{display:flex;flex-direction:column;gap:6px;}
+  .auth-radios label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;font-weight:normal;margin:0;}
+  .auth-radios input[type=radio]{accent-color:var(--accent);}
+  button{font:13px/1 system-ui,sans-serif;font-family:inherit;padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;transition:background .12s,border-color .12s;}
+  button:hover:not(:disabled){background:#333;border-color:#4a4a4a;}
+  button:disabled{opacity:0.5;cursor:not-allowed;}
+  button.primary{background:var(--accent);border-color:var(--accent);color:white;font-weight:500;}
+  button.primary:hover:not(:disabled){background:#c66a4b;border-color:#c66a4b;}
+  button.danger{color:var(--err);}
+  button.danger:hover:not(:disabled){background:var(--err-dim);border-color:var(--err);}
+  button.ghost{background:transparent;border-color:transparent;color:var(--text-dim);}
+  button.ghost:hover:not(:disabled){background:var(--surface-2);color:var(--text);}
+  .test-row{display:flex;align-items:center;gap:12px;margin-top:8px;}
+  .test-msg{font-size:12px;}
+  .test-msg.ok{color:var(--ok);}
+  .test-msg.err{color:var(--err);}
+  .test-msg.pending{color:var(--text-dim);}
+  details{margin-top:12px;font-size:12px;color:var(--text-dim);}
+  details summary{cursor:pointer;color:var(--text-faint);padding:6px 0;}
+  details pre{background:var(--input);padding:10px 14px;border-radius:5px;overflow:auto;font:11px/1.5 "SF Mono",Monaco,monospace;border:1px solid var(--border);}
+  .restart-note{margin-top:18px;padding:12px 16px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:12px;color:var(--text-dim);}
+  .restart-note strong{color:var(--text);}
 </style>
 </head>
 <body>
-<div class="card">
-<span class="badge">Preview feature · UI not yet shipped</span>
-<h1>Third-Party Inference setup</h1>
-<p>Claude Desktop has all the backend infrastructure for custom model providers — OAuth, MCP integration, secure token storage — but the setup UI itself (the <code>ion-dist</code> bundle) isn't included in public builds yet.</p>
-<p>When Anthropic ships the UI in a future update, <strong>this window will automatically load the real thing</strong> — no action needed on your side. We detect the bundle's presence at open time.</p>
-<h2>What works today</h2>
-<p>Code / Cowork sessions already honor a custom backend. Set it up via the title-bar chip, or from the CLI:</p>
-<pre>claude-desktop-hardened --model YOUR_MODEL --base-url http://your-backend:PORT</pre>
-<p>Then click the <strong>qwen35-4bit</strong>-style pill in the title bar to toggle between Anthropic and your local backend for new Code sessions.</p>
-<h2>What still needs upstream</h2>
-<p><strong>Conversation mode</strong> stays on <code>claude.ai</code> until this setup UI ships. That mode uses claude.ai's hosted frontend — our env-var override doesn't reach it.</p>
-<p class="muted">See <a href="https://github.com/techtoboggan/claude-desktop-hardened-linux#using-a-custom-model-backend" target="_blank">README → Using a custom model backend</a> for details.</p>
-</div>
+
+<header>
+  <h1>Configure Third-Party Inference</h1>
+  <p>Route Claude Desktop's conversation and code modes through your own model backend.</p>
+</header>
+
+<main>
+  <div id="status-banner" class="status-banner anthropic">
+    <span class="dot"></span>
+    <span id="status-text">Loading current configuration…</span>
+  </div>
+
+  <section>
+    <h2>Provider</h2>
+    <label class="provider-card selected" id="card-gateway">
+      <input type="radio" name="provider" value="gateway" checked>
+      <div class="pc-body">
+        <div class="pc-title">Gateway</div>
+        <div class="pc-desc">Anthropic-compatible HTTP endpoint. Works with LiteLLM, LM Studio, Ollama, OpenRouter, vLLM, and any service that speaks the /v1/messages API.</div>
+      </div>
+    </label>
+    <label class="provider-card disabled">
+      <input type="radio" name="provider" value="bedrock" disabled>
+      <div class="pc-body">
+        <div class="pc-title">AWS Bedrock</div>
+        <div class="pc-desc">Configure via JSON for now — needs AWS credentials.</div>
+        <div class="pc-note">Edit <code>claude_desktop_config.json</code> directly to set up Bedrock.</div>
+      </div>
+    </label>
+    <label class="provider-card disabled">
+      <input type="radio" name="provider" value="vertex" disabled>
+      <div class="pc-body">
+        <div class="pc-title">Google Vertex AI</div>
+        <div class="pc-desc">Configure via JSON for now — needs GCP service account.</div>
+      </div>
+    </label>
+    <label class="provider-card disabled">
+      <input type="radio" name="provider" value="foundry" disabled>
+      <div class="pc-body">
+        <div class="pc-title">Azure AI Foundry</div>
+        <div class="pc-desc">Configure via JSON for now — needs Azure resource name.</div>
+      </div>
+    </label>
+  </section>
+
+  <section id="gateway-section">
+    <h2>Gateway settings</h2>
+
+    <div class="field">
+      <label for="baseUrl">Base URL</label>
+      <input type="url" id="baseUrl" placeholder="http://localhost:4000" autocomplete="off" spellcheck="false">
+      <div class="hint">The Anthropic-compatible endpoint that handles <code>/v1/messages</code>. Examples: <code>http://localhost:4000</code> (LiteLLM), <code>http://localhost:1234/v1</code> (LM Studio), <code>https://openrouter.ai/api/v1</code>.</div>
+    </div>
+
+    <div class="field">
+      <label for="apiKey">API key</label>
+      <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" spellcheck="false">
+      <div class="hint">Sent to the gateway with every request. Stored in <code>~/.config/Claude/claude_desktop_config.json</code> (filesystem-readable but not transmitted anywhere by us).</div>
+    </div>
+
+    <div class="field">
+      <label>Authentication scheme</label>
+      <div class="auth-radios">
+        <label><input type="radio" name="authScheme" value="bearer" checked> <strong>Bearer</strong> — <code>Authorization: Bearer …</code> (LiteLLM default)</label>
+        <label><input type="radio" name="authScheme" value="x-api-key"> <strong>X-Api-Key</strong> — <code>X-Api-Key: …</code> header</label>
+        <label><input type="radio" name="authScheme" value="auto"> <strong>Auto</strong> — try both</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="test-row">
+        <button id="btn-test" type="button">Test connection</button>
+        <span id="test-msg" class="test-msg"></span>
+      </div>
+    </div>
+  </section>
+
+  <div class="restart-note">
+    <strong>Restart required.</strong> <code>deploymentMode</code> is read once at startup, so saving here triggers an app restart. Your current chat state will be lost — finish any unsaved work first.
+  </div>
+
+  <details>
+    <summary>View the JSON that will be written</summary>
+    <pre id="json-preview"></pre>
+  </details>
+</main>
+
+<footer>
+  <button id="btn-disable" class="danger" type="button">Use Anthropic (disable 3P)</button>
+  <div class="spacer"></div>
+  <button id="btn-cancel" class="ghost" type="button">Cancel</button>
+  <button id="btn-save" class="primary" type="button">Save & Restart</button>
+</footer>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const api=window.cdh3p;
+  if(!api){
+    $("status-text").textContent="Setup bridge unavailable — preload script failed to load.";
+    return;
+  }
+
+  // Build the config object from current form state.
+  function readForm(){
+    return {
+      provider:document.querySelector('input[name=provider]:checked').value,
+      baseUrl:$("baseUrl").value.trim(),
+      apiKey:$("apiKey").value,
+      authScheme:document.querySelector('input[name=authScheme]:checked').value,
+    };
+  }
+
+  function previewJson(form){
+    const out={
+      deploymentMode:"3p",
+      enterpriseConfig:{
+        inferenceProvider:form.provider,
+      },
+    };
+    if(form.provider==="gateway"){
+      out.enterpriseConfig.inferenceGatewayBaseUrl=form.baseUrl||"<unset>";
+      if(form.apiKey)out.enterpriseConfig.inferenceGatewayApiKey="<redacted>";
+      out.enterpriseConfig.inferenceGatewayAuthScheme=form.authScheme;
+    }
+    return JSON.stringify(out,null,2);
+  }
+
+  function updatePreview(){
+    $("json-preview").textContent=previewJson(readForm());
+  }
+
+  function validate(form){
+    if(form.provider!=="gateway")return "Only Gateway is supported via this UI right now.";
+    if(!form.baseUrl)return "Base URL is required.";
+    if(!/^https?:\\/\\//.test(form.baseUrl))return "Base URL must start with http:// or https://";
+    return null;
+  }
+
+  function setTestMsg(text,kind){
+    const el=$("test-msg");
+    el.textContent=text;
+    el.className="test-msg "+(kind||"");
+  }
+
+  // Wire up listeners
+  ["baseUrl","apiKey"].forEach(id=>$(id).addEventListener("input",updatePreview));
+  document.querySelectorAll('input[name=provider],input[name=authScheme]').forEach(r=>r.addEventListener("change",updatePreview));
+
+  $("btn-test").addEventListener("click",async()=>{
+    const form=readForm();
+    const err=validate(form);
+    if(err){setTestMsg(err,"err");return;}
+    setTestMsg("Probing…","pending");
+    $("btn-test").disabled=true;
+    try{
+      const res=await api.testConnection({baseUrl:form.baseUrl,apiKey:form.apiKey,authScheme:form.authScheme});
+      if(res.ok){
+        setTestMsg("Reachable — HTTP "+res.status+(res.note?" ("+res.note+")":""),"ok");
+      }else{
+        setTestMsg(res.error||"Failed","err");
+      }
+    }catch(e){setTestMsg("Test failed: "+e.message,"err");}
+    $("btn-test").disabled=false;
+  });
+
+  $("btn-save").addEventListener("click",async()=>{
+    const form=readForm();
+    const err=validate(form);
+    if(err){setTestMsg(err,"err");return;}
+    $("btn-save").disabled=true;
+    try{
+      await api.saveAndRestart(form);
+    }catch(e){
+      setTestMsg("Save failed: "+e.message,"err");
+      $("btn-save").disabled=false;
+    }
+  });
+
+  $("btn-disable").addEventListener("click",async()=>{
+    $("btn-disable").disabled=true;
+    try{
+      await api.disableAndRestart();
+    }catch(e){
+      setTestMsg("Disable failed: "+e.message,"err");
+      $("btn-disable").disabled=false;
+    }
+  });
+
+  $("btn-cancel").addEventListener("click",()=>api.close());
+
+  // Load existing config and pre-populate form.
+  api.getConfig().then(cfg=>{
+    const ec=cfg.enterpriseConfig||{};
+    const provider=ec.inferenceProvider||"gateway";
+    const radio=document.querySelector('input[name=provider][value="'+provider+'"]');
+    if(radio&&!radio.disabled)radio.checked=true;
+    if(ec.inferenceGatewayBaseUrl)$("baseUrl").value=ec.inferenceGatewayBaseUrl;
+    if(ec.inferenceGatewayApiKey)$("apiKey").value=ec.inferenceGatewayApiKey;
+    if(ec.inferenceGatewayAuthScheme){
+      const r=document.querySelector('input[name=authScheme][value="'+ec.inferenceGatewayAuthScheme+'"]');
+      if(r)r.checked=true;
+    }
+    const isLocal=cfg.deploymentMode==="3p";
+    const banner=$("status-banner");
+    if(isLocal&&ec.inferenceGatewayBaseUrl){
+      banner.className="status-banner local";
+      $("status-text").textContent="Active: "+(ec.inferenceProvider||"gateway")+" → "+ec.inferenceGatewayBaseUrl;
+    }else{
+      banner.className="status-banner anthropic";
+      $("status-text").textContent="Active: Anthropic (default)";
+    }
+    updatePreview();
+  }).catch(e=>{
+    $("status-text").textContent="Failed to load config: "+e.message;
+  });
+})();
+</script>
+
 </body>
 </html>`;
+
   const _cdhOpen3pSetup=()=>{
     try{
       if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
@@ -746,65 +1066,121 @@ a:hover{text-decoration:underline}
         _cdh3pSetupWin.focus();
         return;
       }
-      const{BrowserWindow:_BW,app:_app}=require("electron");
+      const{BrowserWindow:_BW,app:_app,ipcMain:_ipcMain}=require("electron");
       const _pa=require("path");
       const _fsM=require("fs");
       const _os=require("os");
-      const _preload=_pa.join(_app.getAppPath(),".vite","build","mainView.js");
 
-      // Detect if upstream has shipped the ion-dist UI bundle.
-      // resourcesPath on packaged Linux = the dir containing app.asar.
+      // Detect if upstream has shipped the ion-dist UI bundle. If they
+      // ever do, defer to their UI (so we get any future improvements
+      // for free). Otherwise serve our own.
       const _resPath=process.resourcesPath||_pa.dirname(_app.getAppPath());
       const _ionIdx=_pa.join(_resPath,"ion-dist","index.html");
-      const _bundleShipped=_fsM.existsSync(_ionIdx);
+      const _useUpstream=_fsM.existsSync(_ionIdx);
+
+      // Write preload + HTML to temp files (file:// avoids the
+      // data: URL CSP restriction on inline styles).
+      const _tmpPreload=_pa.join(_os.tmpdir(),"cdh-3p-preload-"+process.pid+".js");
+      const _tmpHtml=_pa.join(_os.tmpdir(),"cdh-3p-setup-"+process.pid+".html");
+      try{_fsM.writeFileSync(_tmpPreload,_cdh3pPreloadJs,"utf8");}catch(_){}
+      try{_fsM.writeFileSync(_tmpHtml,_cdh3pSetupHtml,"utf8");}catch(_){}
+
+      // Register IPC handlers (idempotent — drop existing before re-add).
+      const _handlers={
+        "cdh-3p:get-config":()=>_cdh3pReadCfg(),
+        "cdh-3p:save-restart":(_e,form)=>{
+          const cfg=_cdh3pReadCfg();
+          cfg.deploymentMode="3p";
+          cfg.enterpriseConfig=cfg.enterpriseConfig||{};
+          cfg.enterpriseConfig.inferenceProvider=form.provider||"gateway";
+          if(form.provider==="gateway"){
+            if(form.baseUrl)cfg.enterpriseConfig.inferenceGatewayBaseUrl=form.baseUrl;
+            if(form.apiKey)cfg.enterpriseConfig.inferenceGatewayApiKey=form.apiKey;
+            if(form.authScheme)cfg.enterpriseConfig.inferenceGatewayAuthScheme=form.authScheme;
+          }
+          _cdh3pWriteCfg(cfg);
+          console.log("[cowork-linux] 3P setup → wrote deploymentMode=3p, restarting app");
+          setTimeout(()=>{_app.relaunch();_app.exit(0);},150);
+          return{ok:true};
+        },
+        "cdh-3p:disable-restart":()=>{
+          const cfg=_cdh3pReadCfg();
+          cfg.deploymentMode="1p";
+          delete cfg.enterpriseConfig;
+          _cdh3pWriteCfg(cfg);
+          console.log("[cowork-linux] 3P setup → reverted to deploymentMode=1p, restarting app");
+          setTimeout(()=>{_app.relaunch();_app.exit(0);},150);
+          return{ok:true};
+        },
+        "cdh-3p:test":async(_e,p)=>{
+          try{
+            const{net:_net}=require("electron");
+            const{baseUrl,apiKey,authScheme}=p;
+            return await new Promise((resolve)=>{
+              const req=_net.request({url:baseUrl,method:"GET"});
+              if(apiKey){
+                if(authScheme==="x-api-key")req.setHeader("X-Api-Key",apiKey);
+                else if(authScheme==="auto"){
+                  req.setHeader("Authorization","Bearer "+apiKey);
+                  req.setHeader("X-Api-Key",apiKey);
+                }else req.setHeader("Authorization","Bearer "+apiKey);
+              }
+              const _t=setTimeout(()=>{try{req.abort();}catch(_){}resolve({ok:false,error:"Timeout after 5s"});},5000);
+              req.on("response",(res)=>{
+                clearTimeout(_t);
+                let note;
+                if(res.statusCode===401||res.statusCode===403)note="auth rejected — check API key";
+                else if(res.statusCode===404)note="endpoint reachable, root path 404 (normal)";
+                resolve({ok:true,status:res.statusCode,note:note});
+              });
+              req.on("error",(err)=>{clearTimeout(_t);resolve({ok:false,error:err.message});});
+              req.end();
+            });
+          }catch(ex){return{ok:false,error:ex.message};}
+        },
+        "cdh-3p:close":()=>{
+          if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed())_cdh3pSetupWin.close();
+          return{ok:true};
+        },
+      };
+      for(const ch of Object.keys(_handlers)){
+        try{_ipcMain.removeHandler(ch);}catch(_){}
+        _ipcMain.handle(ch,_handlers[ch]);
+      }
 
       _cdh3pSetupWin=new _BW({
-        width:900,height:720,
-        minWidth:720,minHeight:560,
+        width:780,height:760,
+        minWidth:680,minHeight:600,
         autoHideMenuBar:true,
         title:"Configure Third-Party Inference",
+        backgroundColor:"#1a1a1a",
         webPreferences:{
-          // Only attach the upstream preload if we're loading the real UI.
-          // The fallback page is static HTML that doesn't need it, and
-          // attaching it risks CSP / context-isolation surprises.
-          preload:(_bundleShipped&&_fsM.existsSync(_preload))?_preload:undefined,
+          preload:_useUpstream?_pa.join(_app.getAppPath(),".vite","build","mainView.js"):_tmpPreload,
           contextIsolation:true,
           nodeIntegration:false,
           sandbox:false,
         },
       });
 
-      // Tag the window so the main browser-window-created injector knows
-      // to skip the title-bar chip / icon — those are for the MAIN app
-      // window only, not sub-windows like this setup page.
+      // Tag so the title-bar chip injector skips this window.
       _cdh3pSetupWin.__cdhSkipInject=true;
 
-      if(_bundleShipped){
+      if(_useUpstream){
         _cdh3pSetupWin.loadURL("netezza://localhost/setup-desktop-3p");
-        console.log("[cowork-linux] Opened Third-Party Inference setup (official UI at "+_ionIdx+")");
+        console.log("[cowork-linux] 3P setup: deferring to upstream ion-dist UI");
       }else{
-        // Serve the fallback from a temp file instead of a data: URL —
-        // data URLs have an opaque origin and some Electron/Chromium
-        // configurations apply a restrictive default CSP that silently
-        // blocks inline styles. File URLs don't have that problem.
-        const _tmpHtml=_pa.join(_os.tmpdir(),"cdh-3p-fallback-"+process.pid+".html");
-        try{
-          _fsM.writeFileSync(_tmpHtml,_cdh3pFallbackHtml,"utf8");
-          _cdh3pSetupWin.loadURL("file://"+_tmpHtml);
-          console.log("[cowork-linux] Opened 3P setup fallback (ion-dist not found at "+_ionIdx+") — served from "+_tmpHtml);
-        }catch(writeEx){
-          // Write failed — fall back to data: URL as a last resort.
-          console.warn("[cowork-linux] Temp file write failed, using data: URL:",writeEx.message);
-          _cdh3pSetupWin.loadURL("data:text/html;charset=utf-8,"+encodeURIComponent(_cdh3pFallbackHtml));
-        }
-        // Clean up the temp file when the window closes.
-        _cdh3pSetupWin.on("closed",()=>{try{_fsM.unlinkSync(_tmpHtml);}catch(_){}});
+        _cdh3pSetupWin.loadURL("file://"+_tmpHtml);
+        console.log("[cowork-linux] 3P setup: using our own UI at "+_tmpHtml);
       }
-      // Log any load failures so we can diagnose blank-window cases.
+
       _cdh3pSetupWin.webContents.on("did-fail-load",(e,code,desc,url)=>{
         console.error("[cowork-linux] 3P setup page failed to load:",code,desc,url);
       });
-      _cdh3pSetupWin.on("closed",()=>{_cdh3pSetupWin=null;});
+      _cdh3pSetupWin.on("closed",()=>{
+        try{_fsM.unlinkSync(_tmpPreload);}catch(_){}
+        try{_fsM.unlinkSync(_tmpHtml);}catch(_){}
+        _cdh3pSetupWin=null;
+      });
     }catch(ex){
       console.error("[cowork-linux] Failed to open 3P setup:",ex.message);
     }
