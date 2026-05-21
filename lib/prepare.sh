@@ -834,6 +834,17 @@ _capp.on("browser-window-created",(e,w)=>{
   details pre{background:var(--input);padding:10px 14px;border-radius:5px;overflow:auto;font:11px/1.5 "SF Mono",Monaco,monospace;border:1px solid var(--border);}
   .restart-note{margin-top:18px;padding:12px 16px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:12px;color:var(--text-dim);}
   .restart-note strong{color:var(--text);}
+  /* Required-field marker */
+  .req{color:var(--accent);margin-left:2px;}
+  /* Advanced (collapsible) subsections */
+  details.advanced{margin:8px 0 4px;border:1px solid var(--border);border-radius:6px;background:var(--surface);}
+  details.advanced summary{padding:10px 14px;cursor:pointer;font-size:12px;color:var(--text-dim);user-select:none;}
+  details.advanced summary:hover{color:var(--text);}
+  details.advanced[open] summary{border-bottom:1px solid var(--border);color:var(--text);}
+  details.advanced .advanced-body{padding:14px 16px;}
+  details.advanced .advanced-body .field:last-child{margin-bottom:0;}
+  /* Provider sections show/hide */
+  .provider-settings[hidden]{display:none;}
 </style>
 </head>
 <body>
@@ -851,58 +862,58 @@ _capp.on("browser-window-created",(e,w)=>{
 
   <section>
     <h2>Provider</h2>
-    <label class="provider-card selected" id="card-gateway">
+    <label class="provider-card selected">
       <input type="radio" name="provider" value="gateway" checked>
       <div class="pc-body">
         <div class="pc-title">Gateway</div>
         <div class="pc-desc">Anthropic-compatible HTTP endpoint. Works with LiteLLM, LM Studio, Ollama, OpenRouter, vLLM, and any service that speaks the /v1/messages API.</div>
       </div>
     </label>
-    <label class="provider-card disabled">
-      <input type="radio" name="provider" value="bedrock" disabled>
+    <label class="provider-card">
+      <input type="radio" name="provider" value="bedrock">
       <div class="pc-body">
         <div class="pc-title">AWS Bedrock</div>
-        <div class="pc-desc">Configure via JSON for now — needs AWS credentials.</div>
-        <div class="pc-note">Edit <code>claude_desktop_config.json</code> directly to set up Bedrock.</div>
+        <div class="pc-desc">Anthropic models via AWS Bedrock. Uses your AWS credentials (default profile, named profile, or AWS SSO).</div>
       </div>
     </label>
-    <label class="provider-card disabled">
-      <input type="radio" name="provider" value="vertex" disabled>
+    <label class="provider-card">
+      <input type="radio" name="provider" value="vertex">
       <div class="pc-body">
         <div class="pc-title">Google Vertex AI</div>
-        <div class="pc-desc">Configure via JSON for now — needs GCP service account.</div>
+        <div class="pc-desc">Anthropic models via Vertex. Uses application default credentials, a service-account key file, or OAuth.</div>
       </div>
     </label>
-    <label class="provider-card disabled">
-      <input type="radio" name="provider" value="foundry" disabled>
+    <label class="provider-card">
+      <input type="radio" name="provider" value="foundry">
       <div class="pc-body">
         <div class="pc-title">Azure AI Foundry</div>
-        <div class="pc-desc">Configure via JSON for now — needs Azure resource name.</div>
+        <div class="pc-desc">Anthropic models via Azure AI Foundry. Needs a Foundry resource name and key.</div>
       </div>
     </label>
   </section>
 
-  <section id="gateway-section">
+  <!-- ============== GATEWAY SETTINGS ============== -->
+  <section class="provider-settings" data-provider="gateway">
     <h2>Gateway settings</h2>
 
     <div class="field">
-      <label for="baseUrl">Base URL</label>
-      <input type="url" id="baseUrl" placeholder="http://localhost:4000" autocomplete="off" spellcheck="false">
+      <label for="gw-baseUrl">Base URL</label>
+      <input type="url" id="gw-baseUrl" placeholder="http://localhost:4000" autocomplete="off" spellcheck="false">
       <div class="hint">The Anthropic-compatible endpoint that handles <code>/v1/messages</code>. Examples: <code>http://localhost:4000</code> (LiteLLM), <code>http://localhost:1234/v1</code> (LM Studio), <code>https://openrouter.ai/api/v1</code>.</div>
     </div>
 
     <div class="field">
-      <label for="apiKey">API key</label>
-      <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" spellcheck="false">
-      <div class="hint">Sent to the gateway with every request. Stored in <code>~/.config/Claude/claude_desktop_config.json</code> (filesystem-readable but not transmitted anywhere by us).</div>
+      <label for="gw-apiKey">API key</label>
+      <input type="password" id="gw-apiKey" placeholder="sk-…" autocomplete="off" spellcheck="false">
+      <div class="hint">Sent to the gateway with every request. Stored in <code>~/.config/Claude/claude_desktop_config.json</code>.</div>
     </div>
 
     <div class="field">
       <label>Authentication scheme</label>
       <div class="auth-radios">
-        <label><input type="radio" name="authScheme" value="bearer" checked> <strong>Bearer</strong> — <code>Authorization: Bearer …</code> (LiteLLM default)</label>
-        <label><input type="radio" name="authScheme" value="x-api-key"> <strong>X-Api-Key</strong> — <code>X-Api-Key: …</code> header</label>
-        <label><input type="radio" name="authScheme" value="auto"> <strong>Auto</strong> — try both</label>
+        <label><input type="radio" name="gw-authScheme" value="bearer" checked> <strong>Bearer</strong> — <code>Authorization: Bearer …</code> (LiteLLM default)</label>
+        <label><input type="radio" name="gw-authScheme" value="x-api-key"> <strong>X-Api-Key</strong> — <code>X-Api-Key: …</code> header</label>
+        <label><input type="radio" name="gw-authScheme" value="auto"> <strong>Auto</strong> — try both</label>
       </div>
     </div>
 
@@ -911,6 +922,146 @@ _capp.on("browser-window-created",(e,w)=>{
         <button id="btn-test" type="button">Test connection</button>
         <span id="test-msg" class="test-msg"></span>
       </div>
+    </div>
+  </section>
+
+  <!-- ============== BEDROCK SETTINGS ============== -->
+  <section class="provider-settings" data-provider="bedrock" hidden>
+    <h2>Bedrock settings</h2>
+
+    <div class="field">
+      <label for="bd-region">AWS region <span class="req">*</span></label>
+      <input type="text" id="bd-region" list="bd-region-opts" placeholder="us-east-1" autocomplete="off" spellcheck="false">
+      <datalist id="bd-region-opts">
+        <option value="us-east-1">
+        <option value="us-east-2">
+        <option value="us-west-2">
+        <option value="eu-central-1">
+        <option value="eu-west-3">
+        <option value="ap-northeast-1">
+        <option value="ap-southeast-2">
+      </datalist>
+      <div class="hint">The AWS region where your Bedrock models are deployed. Required.</div>
+    </div>
+
+    <div class="field">
+      <label for="bd-profile">AWS profile (optional)</label>
+      <input type="text" id="bd-profile" placeholder="default" autocomplete="off" spellcheck="false">
+      <div class="hint">Named profile from <code>~/.aws/credentials</code> or <code>~/.aws/config</code>. Leave blank to use the default profile or env vars (<code>AWS_ACCESS_KEY_ID</code>, etc.).</div>
+    </div>
+
+    <div class="field">
+      <label for="bd-baseUrl">Custom base URL (optional)</label>
+      <input type="url" id="bd-baseUrl" placeholder="https://vpce-…-bedrock-runtime.us-east-1.vpce.amazonaws.com" autocomplete="off" spellcheck="false">
+      <div class="hint">For VPC endpoint deployments. Most users leave this blank.</div>
+    </div>
+
+    <div class="field">
+      <label for="bd-bearerToken">Bearer token (optional)</label>
+      <input type="password" id="bd-bearerToken" placeholder="sk-…" autocomplete="off" spellcheck="false">
+      <div class="hint">Use this if your Bedrock proxy accepts a bearer token instead of AWS signature auth.</div>
+    </div>
+
+    <div class="field">
+      <label>Service tier</label>
+      <div class="auth-radios">
+        <label><input type="radio" name="bd-serviceTier" value="" checked> <strong>Default</strong> — standard on-demand</label>
+        <label><input type="radio" name="bd-serviceTier" value="flex"> <strong>Flex</strong> — lower-cost tier with higher latency</label>
+      </div>
+    </div>
+
+    <details class="advanced">
+      <summary>AWS SSO (advanced)</summary>
+      <div class="advanced-body">
+        <div class="field">
+          <label for="bd-ssoStartUrl">SSO start URL</label>
+          <input type="url" id="bd-ssoStartUrl" placeholder="https://my-org.awsapps.com/start" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="bd-ssoAccountId">SSO account ID</label>
+          <input type="text" id="bd-ssoAccountId" placeholder="123456789012" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="bd-ssoRegion">SSO region</label>
+          <input type="text" id="bd-ssoRegion" placeholder="us-east-1" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="bd-ssoRoleName">SSO role name</label>
+          <input type="text" id="bd-ssoRoleName" placeholder="BedrockUser" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== VERTEX SETTINGS ============== -->
+  <section class="provider-settings" data-provider="vertex" hidden>
+    <h2>Vertex AI settings</h2>
+
+    <div class="field">
+      <label for="vx-projectId">GCP project ID <span class="req">*</span></label>
+      <input type="text" id="vx-projectId" placeholder="my-gcp-project" autocomplete="off" spellcheck="false">
+      <div class="hint">The Google Cloud project where Vertex AI is enabled.</div>
+    </div>
+
+    <div class="field">
+      <label for="vx-region">Region <span class="req">*</span></label>
+      <input type="text" id="vx-region" list="vx-region-opts" placeholder="us-east5" autocomplete="off" spellcheck="false">
+      <datalist id="vx-region-opts">
+        <option value="us-central1">
+        <option value="us-east5">
+        <option value="us-east1">
+        <option value="europe-west1">
+        <option value="europe-west4">
+        <option value="asia-northeast1">
+      </datalist>
+      <div class="hint">The region where Vertex models are available. Anthropic models are typically in <code>us-east5</code>.</div>
+    </div>
+
+    <div class="field">
+      <label for="vx-credentialsFile">Service-account credentials file (optional)</label>
+      <input type="text" id="vx-credentialsFile" placeholder="/home/you/.config/gcloud/service-account.json" autocomplete="off" spellcheck="false">
+      <div class="hint">Path to a service-account JSON key. Leave blank to use application-default credentials (<code>gcloud auth application-default login</code>).</div>
+    </div>
+
+    <div class="field">
+      <label for="vx-baseUrl">Custom base URL (optional)</label>
+      <input type="url" id="vx-baseUrl" placeholder="https://us-east5-aiplatform.googleapis.com" autocomplete="off" spellcheck="false">
+      <div class="hint">Override the default Vertex endpoint. Most users leave this blank.</div>
+    </div>
+
+    <details class="advanced">
+      <summary>OAuth client (advanced, alternative to service-account)</summary>
+      <div class="advanced-body">
+        <div class="field">
+          <label for="vx-oauthClientId">OAuth client ID</label>
+          <input type="text" id="vx-oauthClientId" placeholder="123456-abcdef.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="vx-oauthClientSecret">OAuth client secret</label>
+          <input type="password" id="vx-oauthClientSecret" placeholder="GOCSPX-…" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="vx-oauthScopes">OAuth scopes (comma-separated)</label>
+          <input type="text" id="vx-oauthScopes" placeholder="https://www.googleapis.com/auth/cloud-platform" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============== FOUNDRY SETTINGS ============== -->
+  <section class="provider-settings" data-provider="foundry" hidden>
+    <h2>Azure AI Foundry settings</h2>
+
+    <div class="field">
+      <label for="fd-resource">Resource name <span class="req">*</span></label>
+      <input type="text" id="fd-resource" placeholder="my-foundry-resource" autocomplete="off" spellcheck="false">
+      <div class="hint">Your Foundry resource name — without the domain. Will be expanded to <code>&lt;name&gt;.services.ai.azure.com</code>.</div>
+    </div>
+
+    <div class="field">
+      <label for="fd-apiKey">API key <span class="req">*</span></label>
+      <input type="password" id="fd-apiKey" placeholder="…" autocomplete="off" spellcheck="false">
+      <div class="hint">Key from the Foundry resource's "Keys and Endpoint" page.</div>
     </div>
   </section>
 
@@ -934,79 +1085,185 @@ _capp.on("browser-window-created",(e,w)=>{
 <script>
 (function(){
   const $=id=>document.getElementById(id);
+  const val=id=>{const el=$(id);return el?el.value.trim():"";};
   const api=window.cdh3p;
   if(!api){
     $("status-text").textContent="Setup bridge unavailable — preload script failed to load.";
     return;
   }
 
-  // Build the config object from current form state.
-  function readForm(){
-    return {
-      provider:document.querySelector('input[name=provider]:checked').value,
-      baseUrl:$("baseUrl").value.trim(),
-      apiKey:$("apiKey").value,
-      authScheme:document.querySelector('input[name=authScheme]:checked').value,
-    };
+  function selectedProvider(){
+    return document.querySelector('input[name=provider]:checked').value;
   }
 
-  function previewJson(form){
-    const out={
-      deploymentMode:"3p",
-      enterpriseConfig:{
-        inferenceProvider:form.provider,
-      },
-    };
-    if(form.provider==="gateway"){
-      out.enterpriseConfig.inferenceGatewayBaseUrl=form.baseUrl||"<unset>";
-      if(form.apiKey)out.enterpriseConfig.inferenceGatewayApiKey="<redacted>";
-      out.enterpriseConfig.inferenceGatewayAuthScheme=form.authScheme;
+  // Show only the chosen provider's settings section.
+  function applyProviderVisibility(){
+    const p=selectedProvider();
+    document.querySelectorAll(".provider-settings").forEach(s=>{
+      s.hidden=s.dataset.provider!==p;
+    });
+    // Provider-card visual selection
+    document.querySelectorAll(".provider-card").forEach(c=>{
+      const r=c.querySelector('input[name=provider]');
+      c.classList.toggle("selected",r&&r.checked);
+    });
+  }
+
+  // Gather form state for the selected provider only.
+  function readForm(){
+    const provider=selectedProvider();
+    const form={provider};
+    if(provider==="gateway"){
+      form.baseUrl=val("gw-baseUrl");
+      form.apiKey=$("gw-apiKey").value;
+      form.authScheme=document.querySelector('input[name=gw-authScheme]:checked').value;
+    }else if(provider==="bedrock"){
+      form.region=val("bd-region");
+      form.profile=val("bd-profile");
+      form.baseUrl=val("bd-baseUrl");
+      form.bearerToken=$("bd-bearerToken").value;
+      const tier=document.querySelector('input[name=bd-serviceTier]:checked');
+      form.serviceTier=tier?tier.value:"";
+      form.ssoStartUrl=val("bd-ssoStartUrl");
+      form.ssoAccountId=val("bd-ssoAccountId");
+      form.ssoRegion=val("bd-ssoRegion");
+      form.ssoRoleName=val("bd-ssoRoleName");
+    }else if(provider==="vertex"){
+      form.projectId=val("vx-projectId");
+      form.region=val("vx-region");
+      form.credentialsFile=val("vx-credentialsFile");
+      form.baseUrl=val("vx-baseUrl");
+      form.oauthClientId=val("vx-oauthClientId");
+      form.oauthClientSecret=$("vx-oauthClientSecret").value;
+      form.oauthScopes=val("vx-oauthScopes");
+    }else if(provider==="foundry"){
+      form.resource=val("fd-resource");
+      form.apiKey=$("fd-apiKey").value;
     }
-    return JSON.stringify(out,null,2);
+    return form;
+  }
+
+  // Build a redacted preview of what'll be written.
+  function previewJson(form){
+    const ec={inferenceProvider:form.provider};
+    if(form.provider==="gateway"){
+      ec.inferenceGatewayBaseUrl=form.baseUrl||"<unset>";
+      if(form.apiKey)ec.inferenceGatewayApiKey="<redacted>";
+      ec.inferenceGatewayAuthScheme=form.authScheme;
+    }else if(form.provider==="bedrock"){
+      if(form.region)ec.inferenceBedrockRegion=form.region;
+      if(form.profile)ec.inferenceBedrockProfile=form.profile;
+      if(form.baseUrl)ec.inferenceBedrockBaseUrl=form.baseUrl;
+      if(form.bearerToken)ec.inferenceBedrockBearerToken="<redacted>";
+      if(form.serviceTier)ec.inferenceBedrockServiceTier=form.serviceTier;
+      if(form.ssoStartUrl){
+        ec.inferenceBedrockSso=true;
+        ec.inferenceBedrockSsoStartUrl=form.ssoStartUrl;
+        if(form.ssoAccountId)ec.inferenceBedrockSsoAccountId=form.ssoAccountId;
+        if(form.ssoRegion)ec.inferenceBedrockSsoRegion=form.ssoRegion;
+        if(form.ssoRoleName)ec.inferenceBedrockSsoRoleName=form.ssoRoleName;
+      }
+    }else if(form.provider==="vertex"){
+      if(form.projectId)ec.inferenceVertexProjectId=form.projectId;
+      if(form.region)ec.inferenceVertexRegion=form.region;
+      if(form.credentialsFile)ec.inferenceVertexCredentialsFile=form.credentialsFile;
+      if(form.baseUrl)ec.inferenceVertexBaseUrl=form.baseUrl;
+      if(form.oauthClientId)ec.inferenceVertexOAuthClientId=form.oauthClientId;
+      if(form.oauthClientSecret)ec.inferenceVertexOAuthClientSecret="<redacted>";
+      if(form.oauthScopes){
+        ec.inferenceVertexOAuthScopes=form.oauthScopes.split(",").map(s=>s.trim()).filter(Boolean);
+      }
+    }else if(form.provider==="foundry"){
+      if(form.resource)ec.inferenceFoundryResource=form.resource;
+      if(form.apiKey)ec.inferenceFoundryApiKey="<redacted>";
+    }
+    return JSON.stringify({deploymentMode:"3p",enterpriseConfig:ec},null,2);
   }
 
   function updatePreview(){
     $("json-preview").textContent=previewJson(readForm());
   }
 
+  // Provider-specific validation.
   function validate(form){
-    if(form.provider!=="gateway")return "Only Gateway is supported via this UI right now.";
-    if(!form.baseUrl)return "Base URL is required.";
-    if(!/^https?:\\/\\//.test(form.baseUrl))return "Base URL must start with http:// or https://";
+    if(form.provider==="gateway"){
+      if(!form.baseUrl)return "Base URL is required.";
+      if(!/^https?:\\/\\//.test(form.baseUrl))return "Base URL must start with http:// or https://";
+    }else if(form.provider==="bedrock"){
+      if(!form.region)return "AWS region is required.";
+      // SSO config is all-or-nothing: if any SSO field is set, the others should be too
+      const ssoFields=[form.ssoStartUrl,form.ssoAccountId,form.ssoRegion,form.ssoRoleName];
+      const ssoSet=ssoFields.filter(Boolean).length;
+      if(ssoSet>0&&ssoSet<4){
+        return "If using SSO, all four SSO fields are required (start URL, account ID, region, role name).";
+      }
+    }else if(form.provider==="vertex"){
+      if(!form.projectId)return "GCP project ID is required.";
+      if(!form.region)return "Region is required.";
+      const oauthSet=[form.oauthClientId,form.oauthClientSecret].filter(Boolean).length;
+      if(oauthSet>0&&oauthSet<2){
+        return "OAuth client ID and secret must both be set together.";
+      }
+    }else if(form.provider==="foundry"){
+      if(!form.resource)return "Resource name is required.";
+      if(!form.apiKey)return "API key is required.";
+    }
     return null;
   }
 
   function setTestMsg(text,kind){
     const el=$("test-msg");
+    if(!el)return;
     el.textContent=text;
     el.className="test-msg "+(kind||"");
   }
 
-  // Wire up listeners
-  ["baseUrl","apiKey"].forEach(id=>$(id).addEventListener("input",updatePreview));
-  document.querySelectorAll('input[name=provider],input[name=authScheme]').forEach(r=>r.addEventListener("change",updatePreview));
-
-  $("btn-test").addEventListener("click",async()=>{
-    const form=readForm();
-    const err=validate(form);
-    if(err){setTestMsg(err,"err");return;}
-    setTestMsg("Probing…","pending");
-    $("btn-test").disabled=true;
-    try{
-      const res=await api.testConnection({baseUrl:form.baseUrl,apiKey:form.apiKey,authScheme:form.authScheme});
-      if(res.ok){
-        setTestMsg("Reachable — HTTP "+res.status+(res.note?" ("+res.note+")":""),"ok");
-      }else{
-        setTestMsg(res.error||"Failed","err");
-      }
-    }catch(e){setTestMsg("Test failed: "+e.message,"err");}
-    $("btn-test").disabled=false;
+  // Listeners — update preview + visibility on any change in the form.
+  document.querySelectorAll("input,select,textarea").forEach(el=>{
+    el.addEventListener("input",updatePreview);
+    el.addEventListener("change",updatePreview);
   });
+  document.querySelectorAll('input[name=provider]').forEach(r=>{
+    r.addEventListener("change",()=>{
+      applyProviderVisibility();
+      updatePreview();
+    });
+  });
+
+  // Test connection — only meaningful for the gateway right now. The
+  // cloud-provider auth flows are too provider-specific to probe from
+  // here without a full SDK round-trip.
+  const btnTest=$("btn-test");
+  if(btnTest){
+    btnTest.addEventListener("click",async()=>{
+      const form=readForm();
+      if(form.provider!=="gateway")return;
+      const err=validate(form);
+      if(err){setTestMsg(err,"err");return;}
+      setTestMsg("Probing…","pending");
+      btnTest.disabled=true;
+      try{
+        const res=await api.testConnection({baseUrl:form.baseUrl,apiKey:form.apiKey,authScheme:form.authScheme});
+        if(res.ok){
+          setTestMsg("Reachable — HTTP "+res.status+(res.note?" ("+res.note+")":""),"ok");
+        }else{
+          setTestMsg(res.error||"Failed","err");
+        }
+      }catch(e){setTestMsg("Test failed: "+e.message,"err");}
+      btnTest.disabled=false;
+    });
+  }
 
   $("btn-save").addEventListener("click",async()=>{
     const form=readForm();
     const err=validate(form);
-    if(err){setTestMsg(err,"err");return;}
+    if(err){
+      // Show error in either test-msg (gateway) or banner
+      setTestMsg(err,"err");
+      $("status-text").textContent=err;
+      $("status-banner").className="status-banner anthropic";
+      return;
+    }
     $("btn-save").disabled=true;
     try{
       await api.saveAndRestart(form);
@@ -1028,27 +1285,78 @@ _capp.on("browser-window-created",(e,w)=>{
 
   $("btn-cancel").addEventListener("click",()=>api.close());
 
+  // Helper to set value if element exists.
+  function setIf(id,v){if(v!==undefined&&v!==null){const el=$(id);if(el)el.value=v;}}
+
   // Load existing config and pre-populate form.
   api.getConfig().then(cfg=>{
     const ec=cfg.enterpriseConfig||{};
     const provider=ec.inferenceProvider||"gateway";
     const radio=document.querySelector('input[name=provider][value="'+provider+'"]');
-    if(radio&&!radio.disabled)radio.checked=true;
-    if(ec.inferenceGatewayBaseUrl)$("baseUrl").value=ec.inferenceGatewayBaseUrl;
-    if(ec.inferenceGatewayApiKey)$("apiKey").value=ec.inferenceGatewayApiKey;
+    if(radio)radio.checked=true;
+
+    // Gateway prefill
+    setIf("gw-baseUrl",ec.inferenceGatewayBaseUrl);
+    setIf("gw-apiKey",ec.inferenceGatewayApiKey);
     if(ec.inferenceGatewayAuthScheme){
-      const r=document.querySelector('input[name=authScheme][value="'+ec.inferenceGatewayAuthScheme+'"]');
+      const r=document.querySelector('input[name=gw-authScheme][value="'+ec.inferenceGatewayAuthScheme+'"]');
       if(r)r.checked=true;
     }
+
+    // Bedrock prefill
+    setIf("bd-region",ec.inferenceBedrockRegion);
+    setIf("bd-profile",ec.inferenceBedrockProfile);
+    setIf("bd-baseUrl",ec.inferenceBedrockBaseUrl);
+    setIf("bd-bearerToken",ec.inferenceBedrockBearerToken);
+    if(ec.inferenceBedrockServiceTier){
+      const r=document.querySelector('input[name=bd-serviceTier][value="'+ec.inferenceBedrockServiceTier+'"]');
+      if(r)r.checked=true;
+    }
+    setIf("bd-ssoStartUrl",ec.inferenceBedrockSsoStartUrl);
+    setIf("bd-ssoAccountId",ec.inferenceBedrockSsoAccountId);
+    setIf("bd-ssoRegion",ec.inferenceBedrockSsoRegion);
+    setIf("bd-ssoRoleName",ec.inferenceBedrockSsoRoleName);
+
+    // Vertex prefill
+    setIf("vx-projectId",ec.inferenceVertexProjectId);
+    setIf("vx-region",ec.inferenceVertexRegion);
+    setIf("vx-credentialsFile",ec.inferenceVertexCredentialsFile);
+    setIf("vx-baseUrl",ec.inferenceVertexBaseUrl);
+    setIf("vx-oauthClientId",ec.inferenceVertexOAuthClientId);
+    setIf("vx-oauthClientSecret",ec.inferenceVertexOAuthClientSecret);
+    if(Array.isArray(ec.inferenceVertexOAuthScopes)){
+      setIf("vx-oauthScopes",ec.inferenceVertexOAuthScopes.join(", "));
+    }
+
+    // Foundry prefill
+    setIf("fd-resource",ec.inferenceFoundryResource);
+    setIf("fd-apiKey",ec.inferenceFoundryApiKey);
+
+    // Status banner reflects ACTIVE state at app start (not what's
+    // in the form, which the user may be editing).
     const isLocal=cfg.deploymentMode==="3p";
     const banner=$("status-banner");
-    if(isLocal&&ec.inferenceGatewayBaseUrl){
+    if(isLocal){
       banner.className="status-banner local";
-      $("status-text").textContent="Active: "+(ec.inferenceProvider||"gateway")+" → "+ec.inferenceGatewayBaseUrl;
+      let label="";
+      if(provider==="gateway"&&ec.inferenceGatewayBaseUrl){
+        label="Gateway → "+ec.inferenceGatewayBaseUrl;
+      }else if(provider==="bedrock"){
+        label="AWS Bedrock ("+(ec.inferenceBedrockRegion||"?")+")";
+      }else if(provider==="vertex"){
+        label="Vertex AI ("+(ec.inferenceVertexProjectId||"?")+" / "+(ec.inferenceVertexRegion||"?")+")";
+      }else if(provider==="foundry"){
+        label="Azure Foundry ("+(ec.inferenceFoundryResource||"?")+")";
+      }else{
+        label=provider;
+      }
+      $("status-text").textContent="Active: "+label;
     }else{
       banner.className="status-banner anthropic";
       $("status-text").textContent="Active: Anthropic (default)";
     }
+
+    applyProviderVisibility();
     updatePreview();
   }).catch(e=>{
     $("status-text").textContent="Failed to load config: "+e.message;
@@ -1091,15 +1399,45 @@ _capp.on("browser-window-created",(e,w)=>{
         "cdh-3p:save-restart":(_e,form)=>{
           const cfg=_cdh3pReadCfg();
           cfg.deploymentMode="3p";
-          cfg.enterpriseConfig=cfg.enterpriseConfig||{};
-          cfg.enterpriseConfig.inferenceProvider=form.provider||"gateway";
+          // Replace enterpriseConfig wholesale so stale fields from a
+          // previous provider don't bleed through (e.g. switching from
+          // Bedrock → Vertex shouldn't keep AWS region as junk).
+          const ec={inferenceProvider:form.provider||"gateway"};
           if(form.provider==="gateway"){
-            if(form.baseUrl)cfg.enterpriseConfig.inferenceGatewayBaseUrl=form.baseUrl;
-            if(form.apiKey)cfg.enterpriseConfig.inferenceGatewayApiKey=form.apiKey;
-            if(form.authScheme)cfg.enterpriseConfig.inferenceGatewayAuthScheme=form.authScheme;
+            if(form.baseUrl)ec.inferenceGatewayBaseUrl=form.baseUrl;
+            if(form.apiKey)ec.inferenceGatewayApiKey=form.apiKey;
+            if(form.authScheme)ec.inferenceGatewayAuthScheme=form.authScheme;
+          }else if(form.provider==="bedrock"){
+            if(form.region)ec.inferenceBedrockRegion=form.region;
+            if(form.profile)ec.inferenceBedrockProfile=form.profile;
+            if(form.baseUrl)ec.inferenceBedrockBaseUrl=form.baseUrl;
+            if(form.bearerToken)ec.inferenceBedrockBearerToken=form.bearerToken;
+            if(form.serviceTier)ec.inferenceBedrockServiceTier=form.serviceTier;
+            if(form.ssoStartUrl){
+              ec.inferenceBedrockSso=true;
+              ec.inferenceBedrockSsoStartUrl=form.ssoStartUrl;
+              if(form.ssoAccountId)ec.inferenceBedrockSsoAccountId=form.ssoAccountId;
+              if(form.ssoRegion)ec.inferenceBedrockSsoRegion=form.ssoRegion;
+              if(form.ssoRoleName)ec.inferenceBedrockSsoRoleName=form.ssoRoleName;
+            }
+          }else if(form.provider==="vertex"){
+            if(form.projectId)ec.inferenceVertexProjectId=form.projectId;
+            if(form.region)ec.inferenceVertexRegion=form.region;
+            if(form.credentialsFile)ec.inferenceVertexCredentialsFile=form.credentialsFile;
+            if(form.baseUrl)ec.inferenceVertexBaseUrl=form.baseUrl;
+            if(form.oauthClientId)ec.inferenceVertexOAuthClientId=form.oauthClientId;
+            if(form.oauthClientSecret)ec.inferenceVertexOAuthClientSecret=form.oauthClientSecret;
+            if(form.oauthScopes){
+              const scopes=String(form.oauthScopes).split(",").map(s=>s.trim()).filter(Boolean);
+              if(scopes.length)ec.inferenceVertexOAuthScopes=scopes;
+            }
+          }else if(form.provider==="foundry"){
+            if(form.resource)ec.inferenceFoundryResource=form.resource;
+            if(form.apiKey)ec.inferenceFoundryApiKey=form.apiKey;
           }
+          cfg.enterpriseConfig=ec;
           _cdh3pWriteCfg(cfg);
-          console.log("[cowork-linux] 3P setup → wrote deploymentMode=3p, restarting app");
+          console.log("[cowork-linux] 3P setup → wrote deploymentMode=3p (provider="+ec.inferenceProvider+"), restarting app");
           setTimeout(()=>{_app.relaunch();_app.exit(0);},150);
           return{ok:true};
         },
