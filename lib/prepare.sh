@@ -509,32 +509,79 @@ _capp.on("browser-window-created",(e,w)=>{
     "}",
   ].join("");
 
-  // Resolve the current backend mode from env + config. Runs in main,
-  // then gets injected as a JS literal into the renderer's chip.
+  // Resolve the current backend mode from env + both config files. Runs
+  // in main, then gets injected as a JS literal into the renderer's chip.
+  //
+  // Two override paths to check (in priority order):
+  //   1. Shell ANTHROPIC_BASE_URL env var (live, Code mode only)
+  //   2. ~/.config/Claude/claude_desktop_config.json — deploymentMode/
+  //      enterpriseConfig (FULL APP override — affects conversation
+  //      mode too, requires restart, set via the right-click setup UI)
+  //   3. ~/.config/Claude/custom-backend.json — Code-mode env override
+  //      (live toggle via the chip, doesn't affect conversation mode)
+  //
+  // The chip's "active" pill reflects whichever override is currently
+  // in effect. The tooltip identifies which source is active so the
+  // user understands what mode they're in.
   const _resolveBackendMode=()=>{
+    const _pa=require("path"),_fsR=require("fs"),_osR=require("os");
+    const _cfgDir=process.env.XDG_CONFIG_HOME||_pa.join(_osR.homedir(),".config");
+
+    // Path 1: shell env override (Code mode only, live)
     const envUrl=process.env.ANTHROPIC_BASE_URL;
     const envModel=process.env.ANTHROPIC_MODEL||process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
     if(envUrl){
-      return{mode:"local",baseUrl:envUrl,model:envModel||"custom",source:"env"};
+      return{mode:"local",scope:"code-only",provider:"gateway",detail:envUrl,model:envModel||"custom",source:"env"};
     }
+
+    // Path 2: full-app 3P mode (from claude_desktop_config.json)
+    let fullApp=null;
     try{
-      const cfgPath=require("path").join(
-        process.env.XDG_CONFIG_HOME||require("path").join(require("os").homedir(),".config"),
-        "Claude","custom-backend.json"
-      );
-      if(require("fs").existsSync(cfgPath)){
-        const cfg=JSON.parse(require("fs").readFileSync(cfgPath,"utf8"));
-        if(cfg&&cfg.enabled&&cfg.baseUrl){
-          return{mode:"local",baseUrl:cfg.baseUrl,model:cfg.model||"custom",source:"config"};
-        }
-        if(cfg&&cfg.baseUrl){
-          // Configured but toggled off — report as anthropic but carry
-          // the config so the chip tooltip can say "Click to switch to X"
-          return{mode:"anthropic",configured:{baseUrl:cfg.baseUrl,model:cfg.model||"?"}};
+      const claudeCfgPath=_pa.join(_cfgDir,"Claude","claude_desktop_config.json");
+      if(_fsR.existsSync(claudeCfgPath)){
+        const cdc=JSON.parse(_fsR.readFileSync(claudeCfgPath,"utf8"));
+        if(cdc&&cdc.deploymentMode==="3p"&&cdc.enterpriseConfig){
+          const ec=cdc.enterpriseConfig;
+          let detail="";
+          if(ec.inferenceProvider==="gateway"&&ec.inferenceGatewayBaseUrl)detail=ec.inferenceGatewayBaseUrl;
+          else if(ec.inferenceProvider==="bedrock")detail=ec.inferenceBedrockRegion||"bedrock";
+          else if(ec.inferenceProvider==="vertex")detail=(ec.inferenceVertexProjectId||"")+" / "+(ec.inferenceVertexRegion||"");
+          else if(ec.inferenceProvider==="foundry")detail=ec.inferenceFoundryResource||"foundry";
+          fullApp={provider:ec.inferenceProvider||"gateway",detail:detail};
         }
       }
     }catch(_){}
-    return{mode:"anthropic"};
+
+    // Path 3: Code-mode override (custom-backend.json — read for "configured" status)
+    let codeMode=null;
+    try{
+      const cbPath=_pa.join(_cfgDir,"Claude","custom-backend.json");
+      if(_fsR.existsSync(cbPath)){
+        const cb=JSON.parse(_fsR.readFileSync(cbPath,"utf8"));
+        if(cb&&cb.baseUrl){
+          codeMode={enabled:!!cb.enabled,baseUrl:cb.baseUrl,model:cb.model||"custom"};
+        }
+      }
+    }catch(_){}
+
+    if(fullApp){
+      return{
+        mode:"local",scope:"full-app",
+        provider:fullApp.provider,detail:fullApp.detail,
+        source:"deployment-mode",
+        codeMode:codeMode,
+      };
+    }
+    if(codeMode&&codeMode.enabled){
+      return{
+        mode:"local",scope:"code-only",
+        provider:"gateway",detail:codeMode.baseUrl,model:codeMode.model,
+        source:"config",
+      };
+    }
+    // Anthropic by default — but carry any configured-but-disabled
+    // backends so the chip tooltip can offer "click to switch" hints.
+    return{mode:"anthropic",codeMode:codeMode};
   };
 
   // JS: append icon + chip + drag strip to documentElement. The chip is
@@ -575,52 +622,92 @@ _capp.on("browser-window-created",(e,w)=>{
       "const divider=document.createElement('div');",
       "divider.className='cdh-divider';",
 
-      // Local segment (disabled if no config)
+      // 3rd-party segment — generic label since any of four providers
+      // (gateway/bedrock/vertex/foundry) may be configured.
       "const segL=document.createElement('div');",
       "segL.className='cdh-seg';",
       "segL.dataset.target='local';",
       "const dotL=document.createElement('span');dotL.className='cdh-dot';",
       "const lblL=document.createElement('span');lblL.className='cdh-label';",
-      "const hasLocal=_state.mode==='local'||!!_state.configured;",
-      "const localModel=_state.mode==='local'?_state.model:(_state.configured&&_state.configured.model)||'Local';",
-      "lblL.textContent=hasLocal?localModel:'Local (not set)';",
+      // Anything configured? Either full-app 3p mode is active, or
+      // there's a code-mode override (enabled or not — having a baseUrl
+      // counts as 'configured').
+      "const hasFullApp=_state.mode==='local'&&_state.scope==='full-app';",
+      "const hasCodeMode=_state.mode==='local'&&_state.scope==='code-only';",
+      "const hasConfigured=hasFullApp||hasCodeMode||(_state.codeMode&&_state.codeMode.baseUrl);",
+      "lblL.textContent=hasConfigured?'3rd party':'3rd party (not set)';",
       "segL.appendChild(dotL);segL.appendChild(lblL);",
 
       // Mark active / disabled
       "if(_state.mode==='anthropic'){",
         "segA.classList.add('cdh-active');",
-        "if(!hasLocal)segL.classList.add('cdh-disabled');",
+        "if(!hasConfigured)segL.classList.add('cdh-disabled');",
       "}else{",
         "segL.classList.add('cdh-active');",
+      "}",
+
+      // Tooltip helpers — describe the active backend by provider name.
+      "function _providerLabel(p){",
+        "if(p==='gateway')return 'Gateway';",
+        "if(p==='bedrock')return 'AWS Bedrock';",
+        "if(p==='vertex')return 'Google Vertex AI';",
+        "if(p==='foundry')return 'Azure AI Foundry';",
+        "return p||'3rd party';",
       "}",
 
       // Tooltips
       "if(_state.mode==='anthropic'){",
         "segA.title='Active: Anthropic (default)';",
-        "segL.title=hasLocal?",
-          "('Switch to local: '+localModel+' @ '+(_state.configured&&_state.configured.baseUrl||'')+' (applies to next Code session)\\nRight-click to open the Third-Party Inference setup'):",
-          "'No local backend configured yet.\\nClick to open the Third-Party Inference setup (enables conversation mode too)\\nOr: claude-desktop-hardened --model NAME --base-url URL (Code mode only)';",
+        "if(hasConfigured){",
+          "const cm=_state.codeMode;",
+          "segL.title='Switch to 3rd party (Code mode only — applies to next Code session)\\n' + ",
+            "(cm?'Configured: '+(cm.model||'gateway')+' @ '+cm.baseUrl:'')+ ",
+            "'\\nRight-click to configure providers (gateway / Bedrock / Vertex / Foundry — full app)';",
+        "}else{",
+          "segL.title='No 3rd-party backend configured.\\nClick to open the provider setup window\\n(supports Gateway, AWS Bedrock, Google Vertex AI, Azure Foundry)';",
+        "}",
       "}else{",
-        "segL.title='Active: '+localModel+' @ '+_state.baseUrl+'\\nSource: '+(_state.source==='env'?'shell env var':'config file')+'\\nRight-click to re-open setup';",
-        "segA.title='Switch to Anthropic (applies to next Code session)';",
+        "const providerName=_providerLabel(_state.provider);",
+        "let scopeNote;",
+        "if(_state.scope==='full-app'){",
+          "scopeNote='Full app (conversation + code) via deploymentMode=3p';",
+        "}else if(_state.source==='env'){",
+          "scopeNote='Code mode only — shell env var override';",
+        "}else{",
+          "scopeNote='Code mode only — config file toggle';",
+        "}",
+        "segL.title='Active: '+providerName+(_state.detail?' ('+_state.detail+')':'')+'\\n' + ",
+          "scopeNote+'\\nRight-click to re-configure';",
+        "segA.title='Switch to Anthropic'+(_state.scope==='full-app'?' (will restart app)':' (applies to next Code session)');",
       "}",
 
       // Click handlers — only if action would actually change state.
-      // Right-click (or click on \"Local (not set)\") opens the hidden
-      // Third-Party Inference setup window baked into Claude Desktop.
+      // Right-click (or click on \"3rd party (not set)\") opens the
+      // provider setup window for full configuration.
       "segA.addEventListener('click',function(e){",
         "e.stopPropagation();",
         "if(_state.mode==='anthropic')return;",
+        // Full-app mode requires restart; route through the disable flow
+        // to clean both override paths.
+        "if(_state.scope==='full-app'){",
+          "console.log('__CDH_OPEN_3P_SETUP__');",
+          "return;",
+        "}",
         "console.log('__CDH_BACKEND_SET__anthropic');",
       "});",
       "segL.addEventListener('click',function(e){",
         "e.stopPropagation();",
-        "if(!hasLocal){",
-          // Not set — open the upstream 3P setup directly.
+        "if(!hasConfigured){",
+          // Not set — open the setup window to configure.
           "console.log('__CDH_OPEN_3P_SETUP__');",
           "return;",
         "}",
-        "if(_state.mode==='local')return;",
+        "if(_state.mode==='local'){",
+          // Already active. Right-click would re-open setup, so just no-op.
+          "return;",
+        "}",
+        // Toggle code-mode override on (the only thing left-click changes
+        // without restart). Full-app mode requires the setup window.
         "console.log('__CDH_BACKEND_SET__local');",
       "});",
       // Right-click on either segment opens the 3P setup — lets users
@@ -1534,25 +1621,37 @@ _capp.on("browser-window-created",(e,w)=>{
     }
   });
 
-  // Real-time refresh: watch the config file so external edits
-  // (--use-local from another shell, direct JSON edit, etc.) update
-  // the chip in the running app without needing a restart.
+  // Real-time refresh: watch BOTH config files so external edits
+  // (--use-local from another shell, the setup window writing
+  // claude_desktop_config.json, direct JSON edits, etc.) update the
+  // chip in the running app without needing a restart.
   try{
     const _fs=require("fs");
-    _fs.mkdirSync(require("path").dirname(_cdhBackendCfgPath),{recursive:true});
-    // Touch the file so fs.watch has something to watch even before config exists.
+    const _pa=require("path");
+    _fs.mkdirSync(_pa.dirname(_cdhBackendCfgPath),{recursive:true});
+    // Touch the code-mode config so fs.watch has something to watch even
+    // before the user has configured anything.
     if(!_fs.existsSync(_cdhBackendCfgPath)){
       _fs.writeFileSync(_cdhBackendCfgPath,JSON.stringify({enabled:false},null,2));
     }
+    // The full-app config lives in claude_desktop_config.json — same
+    // dir, sibling file. May not exist on a fresh install.
+    const _claudeCfgPath=_pa.join(_pa.dirname(_cdhBackendCfgPath),"claude_desktop_config.json");
     let _cdhRefreshTimer=null;
-    const _cdhWatcher=_fs.watch(_cdhBackendCfgPath,{persistent:false},()=>{
-      // Debounce — file writers often fire multiple events in quick succession.
+    const _refresh=()=>{
       clearTimeout(_cdhRefreshTimer);
       _cdhRefreshTimer=setTimeout(()=>{
         if(!w.isDestroyed())inject();
       },100);
+    };
+    const _watchers=[];
+    try{_watchers.push(_fs.watch(_cdhBackendCfgPath,{persistent:false},_refresh));}catch(_){}
+    if(_fs.existsSync(_claudeCfgPath)){
+      try{_watchers.push(_fs.watch(_claudeCfgPath,{persistent:false},_refresh));}catch(_){}
+    }
+    w.on("closed",()=>{
+      for(const wt of _watchers){try{wt.close();}catch(_){}}
     });
-    w.on("closed",()=>{try{_cdhWatcher.close();}catch(_){}});
   }catch(ex){
     console.log("[cowork-linux] Backend config watcher setup failed (non-fatal):",ex.message);
   }
