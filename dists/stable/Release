@@ -4,22 +4,22 @@ Suite: stable
 Codename: stable
 Architectures: amd64
 Components: main
-Date: Thu, 21 May 2026 00:14:27 +0000
+Date: Thu, 21 May 2026 00:39:57 +0000
 Description: Security-focused Claude Desktop for Linux
-Date: Thu, 21 May 2026 00:14:27 +0000
+Date: Thu, 21 May 2026 00:39:57 +0000
 MD5Sum:
- d32dad09f502c9e179507666a8d049e1              269 Release
- 9bd14fe4564da25e836676f525826845            31664 main/binary-amd64/Packages
- 04da457940db6b36f6b6a9ad54915692             5891 main/binary-amd64/Packages.gz
+ 72c8b1459ca3c07843174610e388d1ec              269 Release
+ 045844b23fd93fcc70747d1dbb44164d            31664 main/binary-amd64/Packages
+ be069a4c69b7a98098187a010306541e             5890 main/binary-amd64/Packages.gz
 SHA1:
- 546ad95a461f0f7c127ed3bd8744bedaac2163f3              269 Release
- d7d97741985730d42bea1708b266b0f0aa096483            31664 main/binary-amd64/Packages
- 0588effd0ac864cee3a9d3b99cc0f171b2abb28e             5891 main/binary-amd64/Packages.gz
+ 5cacdfaa97c7dcf35e6fc4445ca5b5656cf5df40              269 Release
+ 0c445fbb7c9c4fcbf316b5aa83fbcca6ed572f98            31664 main/binary-amd64/Packages
+ 2f50ef42373cf2feab2738a181154a3823077b21             5890 main/binary-amd64/Packages.gz
 SHA256:
- 7142c3dcd5792f4f999a939d8ebc626c91df22bef34494187e621a46432a067d              269 Release
- fb7e54cb945a47441fa8352cb70d628c5faa997507b425f38d3c950531aabd66            31664 main/binary-amd64/Packages
- f3924546d1d8a12710640fca0dce4df7132e5d382568ccfbbaff0a91197aec32             5891 main/binary-amd64/Packages.gz
+ 3b80f50942e23f3393df29f310b8f3351cba4a411977736d9dd6c3ef4aa384a9              269 Release
+ d648f6a902df3abb6d2b83c5a6901a2809155fcf78bf0c937f1af1901b29c976            31664 main/binary-amd64/Packages
+ afb3fb040853144cb056176ab33bf106e4e862fd88a9446b3cbd44351d00dbf7             5890 main/binary-amd64/Packages.gz
 SHA512:
- dbf4d914c427aef027b61ac589ccd9bbadefe32877957bc061aa4a1493405b26e3f1735e5d1b7c7715a864b177ab72d93bf9f566cd7deb562361fadbc8041b82              269 Release
- f16dc47a83623369c529464c89c86ded3491bb7fc8474b520a7fb88e0695e5ca2406a3c51f77ace5542ddeb2b18db9078b457bf16af6f3177099b4370b292ff5            31664 main/binary-amd64/Packages
- 72c095b17bfab95df0410dc6e351041996517a5029d7580b80e4ad29cc222ccae0dedc30c8ca1db80904b74226dff73d949f1c35cf54661b7c266e0439d9f9dc             5891 main/binary-amd64/Packages.gz
+ c5e057949b8531b2f43382252c4badb27868d1ca8eb4e7008804b64f72203ab1f3876985286c8d8ae45ade01aa95555dcf196680dcfd42c42aa1fabdcb6aabbe              269 Release
+ 56f6eea8e6e23eb3d0d2da8716106de937eeab8f9f6753951bb849d5a0db4f5718450a8d07b6185f700addc3280aca91ce3551fb134b7701f44c5ea10903327c            31664 main/binary-amd64/Packages
+ 997cd23f7cf9f4ef14884ffd654661bc0ede5552ed7bba95ab1a80ab3532cae171f2b699501a7431067d12e32fb9fada516e0903baa51d0f4325bb15e0652ce7             5890 main/binary-amd64/Packages.gz
