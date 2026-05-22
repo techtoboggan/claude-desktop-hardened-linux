@@ -83,13 +83,37 @@ console.log('Patching window decorations for Linux CSD...');
 // ---------------------------------------------------------------------------
 // 1. titleBarOverlay → transparent CSD with 40px height
 // ---------------------------------------------------------------------------
-// Matches both inline object values and variable references. The key
-// `titleBarOverlay:` is an Electron API option name and is stable across
-// upstream versions.
+// Matches inline Electron-API objects (must contain `color`, `symbolColor`,
+// or `height` as the first key) OR a bare identifier reference. The
+// `(?=[,}])` lookahead requires the value to end cleanly at a comma or
+// closing brace.
+//
+// Both refinements are critical defenses against false positives in
+// upstream 1.8555.0+, which now uses `titleBarOverlay` for THREE
+// distinct purposes in the same file:
+//
+//   (a) BrowserWindow constructor option (what we WANT to patch):
+//       `titleBarOverlay: mo,` or `titleBarOverlay: {color:...}`
+//
+//   (b) Field-schema metadata for the desktop preference editor:
+//       `titleBarOverlay: {allowed:!0, creationOnly:!1}` — DON'T touch
+//
+//   (c) Ternary referencing the same property name:
+//       `titleBarOverlay: LFA() ? e.titleBarOverlay : void 0` — DON'T touch
+//
+// Earlier regex `\{[^}]*\}|[A-Za-z_$][\w$]*` matched ALL three forms
+// because it didn't distinguish the API-config object from the schema
+// metadata object, and matched bare `LFA` even when followed by `(`.
+// The result was object-literal-followed-by-call syntax `{...}()?`,
+// which crashed the parser two lines later at an unrelated template
+// literal (`${s} KB`) because the parser's state was wrong by then.
+//
+// The two safeguards together restrict matches to legitimate
+// constructor-option positions only.
 {
   const name = 'titleBarOverlay → transparent CSD';
   const n = replaceCount(
-    /titleBarOverlay:(?:\{[^}]*\}|[A-Za-z_$][\w$]*)/g,
+    /titleBarOverlay:(?:\{(?:color|symbolColor|height)[^}]*\}|[A-Za-z_$][\w$]*)(?=[,}])/g,
     'titleBarOverlay:{color:"#00000000",symbolColor:"#ffffff",height:40}'
   );
   if (n > 0) logApplied(name, n);
@@ -111,15 +135,25 @@ console.log('Patching window decorations for Linux CSD...');
 // ---------------------------------------------------------------------------
 // 3. Remove trafficLightPosition (macOS-only — warning on Linux)
 // ---------------------------------------------------------------------------
-// Handles both `trafficLightPosition:{x:N,y:N}` AND `trafficLightPosition:varRef`.
+// Matches the real API value (a {x,y} object) or a bare variable reference
+// at object-property positions only. Same false-positive concerns as the
+// titleBarOverlay patch above:
+//
+//   - `trafficLightPosition:{allowed:!0,...}` is preference SCHEMA metadata,
+//      not the Electron API — must not delete it.
+//   - `trafficLightPosition:LFA() ? ... : ...` is a ternary reading the
+//      property, not setting it — must not touch.
+//
+// The lookahead `(?=[,}])` and the restricted object-key set (`x` or `y`)
+// keep us focused on legitimate BrowserWindow constructor options.
 // Non-critical — leaving it in produces a console warning but doesn't break UI.
 {
   const name = 'Remove trafficLightPosition';
   if (code.includes('trafficLightPosition')) {
     const before = code.length;
     code = code.replace(
-      /,?trafficLightPosition:(?:\{[^}]*\}|[A-Za-z_$][\w$]*),?/g,
-      ','
+      /,?trafficLightPosition:(?:\{[xy]:[^}]*\}|[A-Za-z_$][\w$]*)(?=[,}])/g,
+      ''
     );
     code = code.replace(/,,+/g, ',');
     code = code.replace(/([\{,])\s*,/g, '$1');
