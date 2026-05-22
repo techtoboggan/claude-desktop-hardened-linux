@@ -16,14 +16,21 @@ permissions:
   pages: write
   id-token: write
 
-# Cancel any in-flight release if a new one starts on a newer commit.
-# Without this, two dispatches in quick succession race to publish to
-# the same tag — whoever finishes first wins, and the slower (often
-# newer-commit) build's artifacts get silently dropped because
-# softprops/action-gh-release sees the tag already exists.
+# Serialize release runs so two dispatches don't race to publish to the
+# same tag. `cancel-in-progress: false` (NOT true) because the workflow's
+# own `check-version` step decides whether a new run is a real build or a
+# skip-only no-op — we let the in-flight build finish and queue the new
+# run, which will then make its own should_release decision. Previously
+# `cancel-in-progress: true` aborted a real build mid-flight when a
+# triggered-by-failure workflow_run came in and skipped itself, leaving
+# nothing built.
+#
+# Tag-collision protection is now handled by the tag-already-exists check
+# in check-version (workflow_run path) + softprops's overwrite_files
+# default (workflow_dispatch path).
 concurrency:
   group: release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check-version:
