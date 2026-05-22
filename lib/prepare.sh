@@ -597,15 +597,15 @@ _capp.on("browser-window-created",(e,w)=>{
     return{mode:"anthropic",codeMode:codeMode};
   };
 
-  // JS: append icon + chip + drag strip to documentElement. The chip is
-  // a segmented control with two pills (Anthropic | local-model). Active
-  // pill is colored, inactive is faded. Click either to switch modes.
-  // Re-inject fully on every call so config-change refreshes update the UI.
-  const _bmState=_resolveBackendMode();
-  const _bmStateJson=JSON.stringify(_bmState);
-  const _js=[
+  // JS template: append icon + chip + drag strip to documentElement.
+  // The chip is a segmented control with two pills (Anthropic | 3rd party).
+  // The state placeholder __CDH_STATE_JSON__ gets substituted with a
+  // freshly-resolved state object on every inject() call (see below) —
+  // otherwise the chip would render with stale state from window-creation
+  // time even after config changes refreshed via fs.watch.
+  const _jsTemplate=[
     "(function(){",
-      "const _state=",_bmStateJson,";",
+      "const _state=__CDH_STATE_JSON__;",
       // Icon (create once; re-injections are no-ops via the id check)
       "if(!document.getElementById('_cld_icon')){",
         "const el=document.createElement('div');",
@@ -753,6 +753,14 @@ _capp.on("browser-window-created",(e,w)=>{
     // with __cdhSkipInject so we don't paint the title-bar chip/icon into
     // them — those belong to the MAIN claude.ai window only.
     if(w.__cdhSkipInject)return;
+    // Resolve state FRESH each call so config-file changes refreshed
+    // by the fs.watcher actually update the chip's visible state.
+    // Earlier we baked state into _js once at window creation, which
+    // meant clicks correctly toggled custom-backend.json but the chip
+    // never re-rendered with the new state — looked like the toggle
+    // did nothing even though the file was changing on disk.
+    const _freshState=_resolveBackendMode();
+    const _js=_jsTemplate.replace("__CDH_STATE_JSON__",JSON.stringify(_freshState));
     w.webContents.insertCSS(_css).catch(()=>{});
     w.webContents.executeJavaScript(_js).catch(()=>{});
   };
