@@ -1481,27 +1481,25 @@ _capp.on("browser-window-created",(e,w)=>{
   const _cdhOpen3pSetup=()=>{
     try{
       if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
-        // Re-raising hits a Wayland focus race: the user just clicked
-        // the main window, so the compositor's focus-stealing
-        // prevention fights any immediate focus() call on the setup
-        // window. Solution: lift the window via setAlwaysOnTop briefly
-        // (raises z-order without requesting focus), then drop it
-        // back to normal after a short delay. The window ends up
-        // visible on top, the user can click into it normally, and
-        // the focus-stealing prevention isn't triggered because we
-        // never asked for focus.
-        try{
-          _cdh3pSetupWin.show();// no-op if visible, brings back if hidden
-          _cdh3pSetupWin.setAlwaysOnTop(true);
-          _cdh3pSetupWin.moveTop();
-          setTimeout(()=>{
-            try{
-              if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
-                _cdh3pSetupWin.setAlwaysOnTop(false);
-              }
-            }catch(_){}
-          },200);
-        }catch(_){}
+        // Window already exists — toggle behaviour:
+        //   visible → close (re-raising fights Wayland focus-stealing
+        //             prevention and produces a flash/disappear loop;
+        //             the user can re-open with another right-click)
+        //   hidden  → show without focus (rare edge case — happens if
+        //             the user minimized the setup window)
+        //
+        // Toggle sidesteps the focus race entirely. Right-click opens,
+        // right-click again closes. Clean, predictable, no compositor
+        // gymnastics. The user can drag/alt-tab the setup window to a
+        // different workspace if they want it visible while interacting
+        // with the main window.
+        if(_cdh3pSetupWin.isVisible()){
+          console.log("[cowork-linux] 3P setup: toggle → close");
+          try{_cdh3pSetupWin.close();}catch(_){}
+        }else{
+          console.log("[cowork-linux] 3P setup: toggle → show (was hidden)");
+          try{_cdh3pSetupWin.show();}catch(_){}
+        }
         return;
       }
       const{BrowserWindow:_BW,app:_app,ipcMain:_ipcMain}=require("electron");
