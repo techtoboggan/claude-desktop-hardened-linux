@@ -534,10 +534,16 @@ _capp.on("browser-window-created",(e,w)=>{
     const _pa=require("path"),_fsR=require("fs"),_osR=require("os");
     const _cfgDir=process.env.XDG_CONFIG_HOME||_pa.join(_osR.homedir(),".config");
 
-    // Path 1: shell env override (Code mode only, live)
+    // Path 1: shell env override (Code mode only, live).
+    // Skip if the env var just points at Anthropic's own URL — that's
+    // a no-op override (common when users explicitly set the default
+    // for clarity, or when something in their shell sets it from a
+    // template). Treating it as "local" misleads the chip into showing
+    // 3rd-party mode when nothing is actually overridden.
     const envUrl=process.env.ANTHROPIC_BASE_URL;
     const envModel=process.env.ANTHROPIC_MODEL||process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
-    if(envUrl){
+    const _isAnthropicNoop=u=>!u||/^https?:\/\/(api\.)?anthropic\.com\/?$/i.test(u.trim());
+    if(envUrl&&!_isAnthropicNoop(envUrl)){
       return{mode:"local",scope:"code-only",provider:"gateway",detail:envUrl,model:envModel||"custom",source:"env"};
     }
 
@@ -1467,26 +1473,27 @@ _capp.on("browser-window-created",(e,w)=>{
   const _cdhOpen3pSetup=()=>{
     try{
       if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
-        // Window already exists. Re-opening hits a Wayland focus race:
-        //
-        //   1. User right-clicks chip in main window → main gains focus
-        //   2. We call setup.show() + setup.focus()
-        //   3. Compositor's focus-stealing prevention briefly grants
-        //      focus to setup, then steals it back to main (which the
-        //      user just interacted with)
-        //   4. User sees setup window flash and disappear behind main
-        //
-        // The fix is to never re-show or re-focus from a main-window
-        // event handler. If the setup window is already visible (the
-        // common case when this fires repeatedly), just raise it via
-        // moveTop — that's a z-order change without a focus request,
-        // so the compositor doesn't fight us. If it's hidden, show()
-        // brings it back but we still don't request focus.
-        if(_cdh3pSetupWin.isVisible()){
-          try{_cdh3pSetupWin.moveTop();}catch(_){}
-        }else{
-          try{_cdh3pSetupWin.show();}catch(_){}
-        }
+        // Re-raising hits a Wayland focus race: the user just clicked
+        // the main window, so the compositor's focus-stealing
+        // prevention fights any immediate focus() call on the setup
+        // window. Solution: lift the window via setAlwaysOnTop briefly
+        // (raises z-order without requesting focus), then drop it
+        // back to normal after a short delay. The window ends up
+        // visible on top, the user can click into it normally, and
+        // the focus-stealing prevention isn't triggered because we
+        // never asked for focus.
+        try{
+          _cdh3pSetupWin.show();// no-op if visible, brings back if hidden
+          _cdh3pSetupWin.setAlwaysOnTop(true);
+          _cdh3pSetupWin.moveTop();
+          setTimeout(()=>{
+            try{
+              if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
+                _cdh3pSetupWin.setAlwaysOnTop(false);
+              }
+            }catch(_){}
+          },200);
+        }catch(_){}
         return;
       }
       const{BrowserWindow:_BW,app:_app,ipcMain:_ipcMain}=require("electron");
