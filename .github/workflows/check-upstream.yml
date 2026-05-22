@@ -9,6 +9,15 @@ permissions:
   contents: write
   issues: write
 
+# Two scheduled runs near a version bump would each try to push the same
+# CLAUDE_VERSION update, and the slower one's `git push` got rejected by
+# "remote contains work that you do not have locally". Serialize them.
+# `cancel-in-progress: false` because we want the EARLIER run to finish
+# its (already-running) build before the next 10-min tick claims the slot.
+concurrency:
+  group: check-upstream
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -146,10 +155,21 @@ jobs:
           VERSION="${{ needs.check.outputs.latest }}"
           SHA="${{ needs.check.outputs.sha256 }}"
 
-          printf '%s\n%s\n' "$VERSION" "$SHA" > CLAUDE_VERSION
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Belt-and-suspenders for the concurrency group above. If another
+          # run beat us to pushing the same bump, our local main is stale
+          # by the time we get here. Pull-rebase first, then check if the
+          # version is already at the target before doing redundant work.
+          git pull --rebase origin main
+          CURRENT_FILE_VERSION=$(head -1 CLAUDE_VERSION | tr -d '[:space:]')
+          if [ "$CURRENT_FILE_VERSION" = "$VERSION" ]; then
+            echo "CLAUDE_VERSION is already at $VERSION — another run got there first. No-op."
+            exit 0
+          fi
+
+          printf '%s\n%s\n' "$VERSION" "$SHA" > CLAUDE_VERSION
           git add CLAUDE_VERSION
           git commit -m "bump: upstream Claude Desktop ${VERSION}
 
@@ -157,7 +177,22 @@ jobs:
           Build tested successfully before merge.
           SHA256: ${SHA}"
 
-          git push origin main
+          # If push still races (someone else pushed between our pull and
+          # push — extremely narrow window with the concurrency group),
+          # rebase and retry once before giving up.
+          if ! git push origin main; then
+            echo "Push rejected — rebasing and retrying once"
+            git pull --rebase origin main
+            # Re-check after rebase: if someone else landed the same bump,
+            # our commit is now redundant and rebase would have dropped it
+            # already (same tree). Exit clean.
+            if ! git log -1 --format=%H origin/main..HEAD >/dev/null 2>&1 || \
+               [ -z "$(git log origin/main..HEAD --oneline)" ]; then
+              echo "Nothing left to push after rebase — another run beat us. No-op."
+              exit 0
+            fi
+            git push origin main
+          fi
 
   # -------------------------------------------------------------------------
   # On failure: open a GitHub issue with diagnostics
