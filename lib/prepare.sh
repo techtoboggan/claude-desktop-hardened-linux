@@ -481,6 +481,13 @@ _capp.on("browser-window-created",(e,w)=>{
       "padding:0 12px;cursor:pointer;",
       "color:rgba(255,255,255,0.5);",
       "transition:color .12s ease,background .12s ease;",
+      // Explicit no-drag — Chromium/Electron's `-webkit-app-region`
+      // doesn't reliably inherit on Linux/Wayland, so the parent
+      // chip's no-drag wasn't being applied to the click targets.
+      // Without this, the compositor treated segment clicks as
+      // title-bar drag gestures and our click handlers never fired.
+      "-webkit-app-region:no-drag !important;",
+      "pointer-events:auto !important;",
     "}",
     "#_cdh_backend_chip .cdh-seg:hover{color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);}",
     // Active state — Anthropic
@@ -681,11 +688,13 @@ _capp.on("browser-window-created",(e,w)=>{
         "segA.title='Switch to Anthropic'+(_state.scope==='full-app'?' (will restart app)':' (applies to next Code session)');",
       "}",
 
-      // Click handlers — only if action would actually change state.
-      // Right-click (or click on \"3rd party (not set)\") opens the
-      // provider setup window for full configuration.
+      // Click handlers — log a debug sentinel unconditionally first so
+      // we can verify in journalctl that left-click is even reaching JS
+      // (was previously suspected of being eaten by the title-bar drag
+      // region intercept). Then dispatch on state.
       "segA.addEventListener('click',function(e){",
-        "e.stopPropagation();",
+        "e.stopPropagation();e.preventDefault();",
+        "console.log('__CDH_DEBUG_CLICK__ segA mode='+_state.mode+' scope='+_state.scope);",
         "if(_state.mode==='anthropic')return;",
         // Full-app mode requires restart; route through the disable flow
         // to clean both override paths.
@@ -696,7 +705,8 @@ _capp.on("browser-window-created",(e,w)=>{
         "console.log('__CDH_BACKEND_SET__anthropic');",
       "});",
       "segL.addEventListener('click',function(e){",
-        "e.stopPropagation();",
+        "e.stopPropagation();e.preventDefault();",
+        "console.log('__CDH_DEBUG_CLICK__ segL mode='+_state.mode+' hasConfigured='+hasConfigured);",
         "if(!hasConfigured){",
           // Not set — open the setup window to configure.
           "console.log('__CDH_OPEN_3P_SETUP__');",
@@ -1457,8 +1467,26 @@ _capp.on("browser-window-created",(e,w)=>{
   const _cdhOpen3pSetup=()=>{
     try{
       if(_cdh3pSetupWin&&!_cdh3pSetupWin.isDestroyed()){
-        _cdh3pSetupWin.show();
-        _cdh3pSetupWin.focus();
+        // Window already exists. Re-opening hits a Wayland focus race:
+        //
+        //   1. User right-clicks chip in main window → main gains focus
+        //   2. We call setup.show() + setup.focus()
+        //   3. Compositor's focus-stealing prevention briefly grants
+        //      focus to setup, then steals it back to main (which the
+        //      user just interacted with)
+        //   4. User sees setup window flash and disappear behind main
+        //
+        // The fix is to never re-show or re-focus from a main-window
+        // event handler. If the setup window is already visible (the
+        // common case when this fires repeatedly), just raise it via
+        // moveTop — that's a z-order change without a focus request,
+        // so the compositor doesn't fight us. If it's hidden, show()
+        // brings it back but we still don't request focus.
+        if(_cdh3pSetupWin.isVisible()){
+          try{_cdh3pSetupWin.moveTop();}catch(_){}
+        }else{
+          try{_cdh3pSetupWin.show();}catch(_){}
+        }
         return;
       }
       const{BrowserWindow:_BW,app:_app,ipcMain:_ipcMain}=require("electron");
@@ -1613,6 +1641,13 @@ _capp.on("browser-window-created",(e,w)=>{
 
   w.webContents.on("console-message",(...args)=>{
     const msg=(args[0]&&args[0].message)||(args.length>=3?args[2]:"");
+    if(typeof msg!=="string"||!msg.startsWith("__CDH_"))return;
+    // Debug echo so journalctl shows every chip event main saw, even
+    // before action dispatch. Helpful when triaging "click did nothing".
+    if(msg.startsWith("__CDH_DEBUG_CLICK__")){
+      console.log("[cowork-linux] chip click:",msg.replace("__CDH_DEBUG_CLICK__ ",""));
+      return;
+    }
     if(msg==="__CDH_BACKEND_SET__anthropic")_cdhSetBackend("anthropic");
     else if(msg==="__CDH_BACKEND_SET__local")_cdhSetBackend("local");
     else if(msg==="__CDH_OPEN_3P_SETUP__")_cdhOpen3pSetup();
