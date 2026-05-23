@@ -771,6 +771,15 @@ _capp.on("browser-window-created",(e,w)=>{
     // with __cdhSkipInject so we don't paint the title-bar chip/icon into
     // them — those belong to the MAIN claude.ai window only.
     if(w.__cdhSkipInject)return;
+    // Sub-windows created by UPSTREAM (quick-entry tray popup, about,
+    // find-in-page, buddy) load their own renderer pages from
+    // .vite/renderer/<name>/. The chip/icon only belong in main_window.
+    // Whitelist by URL so any future sub-windows upstream might add
+    // get excluded automatically.
+    const _curUrl=w.webContents.getURL()||"";
+    if(_curUrl&&!/\/main_window\//.test(_curUrl)&&!/claude\.ai/.test(_curUrl)){
+      return;
+    }
     // Resolve state FRESH each call so config-file changes refreshed
     // by the fs.watcher actually update the chip's visible state.
     // Earlier we baked state into _js once at window creation, which
