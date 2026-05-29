@@ -149,6 +149,14 @@ const _cdhReadUserThemeMode=()=>{
     return _c.userThemeMode||"system";
   }catch(_){return "system";}
 };
+// Theme-appropriate chrome background. Matches upstream's kO() values
+// (#1f1f1e dark / #fdfdfc light) so our title-bar strip blends with the
+// rest of the app chrome. Used for both the window backgroundColor and
+// the injected shell-strip CSS.
+const _cdhThemeBg=()=>{
+  try{return require("electron").nativeTheme.shouldUseDarkColors?"#1f1f1e":"#fdfdfc";}
+  catch(_){return "#1f1f1e";}
+};
 const _cdhSyncThemeFromPortal=()=>{
   // Only override when the user wants to follow the system.
   const mode=_cdhReadUserThemeMode();
@@ -857,6 +865,11 @@ _capp.on("browser-window-created",(e,w)=>{
     const _freshState=_resolveBackendMode();
     const _js=_jsTemplate.replace("__CDH_STATE_JSON__",JSON.stringify(_freshState));
     w.webContents.insertCSS(_css).catch(()=>{});
+    // Paint the shell's html/body background to match the theme so the
+    // 40px title-bar strip is opaque-correct even before/independent of
+    // the window backgroundColor. Computed fresh each inject so theme
+    // changes (which trigger re-inject paths) update it.
+    w.webContents.insertCSS("html,body{background:"+_cdhThemeBg()+" !important;}").catch(()=>{});
     w.webContents.executeJavaScript(_js).catch(()=>{});
   };
 
@@ -869,6 +882,27 @@ _capp.on("browser-window-created",(e,w)=>{
   // they use native frame + title, no overlay.
   if(!w.__cdhSkipInject){
     try{w.setTitleBarOverlay({color:"#00000000",symbolColor:"#ffffff",height:_titlebarH});}catch(e){}
+
+    // The titleBarOverlay is transparent (both ours and upstream's use
+    // #00000000), so the 40px strip above the pushed-down claude.ai view
+    // shows the WINDOW's backgroundColor — which Electron defaults to
+    // WHITE. That's the light strip the user saw even in dark mode.
+    // Paint the window background to match the theme, and keep it in
+    // sync when the system theme changes.
+    const _applyWinBg=()=>{
+      try{if(!w.isDestroyed())w.setBackgroundColor(_cdhThemeBg());}catch(_){}
+      // Re-run inject so the shell-strip CSS (which bakes in the theme
+      // color with !important) is refreshed too — otherwise a CSS rule
+      // applied while shouldUseDarkColors was still stale-light would
+      // override the corrected window background.
+      try{if(!w.isDestroyed())inject();}catch(_){}
+    };
+    _applyWinBg();
+    try{
+      const _nt=require("electron").nativeTheme;
+      _nt.on("updated",_applyWinBg);
+      w.on("closed",()=>{try{_nt.removeListener("updated",_applyWinBg);}catch(_){}});
+    }catch(_){}
   }
 
   // Backend segmented control: renderer fires one of two sentinels
