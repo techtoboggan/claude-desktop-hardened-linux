@@ -124,6 +124,62 @@ const _cPath=require("path");
 _capp.name="Claude";
 _capp.setDesktopName("claude-desktop-hardened.desktop");
 
+// ===== System dark/light theme sync (Linux/Wayland) =====
+// Electron's nativeTheme on Linux derives shouldUseDarkColors from a GTK
+// detection path that is unreliable under Wayland + some compositors
+// (notably KDE Plasma): themeSource="system" can resolve to LIGHT even
+// when the whole desktop is dark (GTK prefer-dark-theme=true, gsettings
+// color-scheme=prefer-dark, AND the xdg portal color-scheme=1 all say
+// dark). The visible symptom is a white title-bar strip on an otherwise
+// dark app.
+//
+// Fix: read the authoritative value from xdg-desktop-portal's
+// org.freedesktop.appearance/color-scheme ourselves and pin
+// nativeTheme.themeSource to the concrete "dark"/"light" — but ONLY when
+// the user's stored preference is "system" (don't override an explicit
+// in-app light/dark choice). Portal value mapping: 1=dark, 2=light,
+// 0=no-preference (leave to Electron).
+const _cdhReadUserThemeMode=()=>{
+  try{
+    const _p=_cPath.join(
+      process.env.XDG_CONFIG_HOME||_cPath.join(require("os").homedir(),".config"),
+      "Claude","config.json"
+    );
+    const _c=JSON.parse(require("fs").readFileSync(_p,"utf8"));
+    return _c.userThemeMode||"system";
+  }catch(_){return "system";}
+};
+const _cdhSyncThemeFromPortal=()=>{
+  // Only override when the user wants to follow the system.
+  const mode=_cdhReadUserThemeMode();
+  if(mode!=="system")return;
+  try{
+    const{execFile}=require("child_process");
+    execFile("gdbus",[
+      "call","--session",
+      "--dest","org.freedesktop.portal.Desktop",
+      "--object-path","/org/freedesktop/portal/desktop",
+      "--method","org.freedesktop.portal.Settings.Read",
+      "org.freedesktop.appearance","color-scheme",
+    ],{timeout:3000},(err,stdout)=>{
+      if(err||!stdout)return;
+      // stdout looks like: (<<uint32 1>>,)
+      const m=stdout.match(/uint32\s+(\d+)/);
+      if(!m)return;
+      const scheme=parseInt(m[1],10);
+      const want=scheme===1?"dark":scheme===2?"light":null;
+      if(!want)return;// 0 = no preference; leave Electron's default
+      try{
+        const _nt=require("electron").nativeTheme;
+        if(_nt.themeSource!==want){
+          _nt.themeSource=want;
+          console.log("[cowork-linux] theme: portal color-scheme="+scheme+" → themeSource="+want);
+        }
+      }catch(_){}
+    });
+  }catch(_){}
+};
+
 // PRELOAD FIX: Electron 35+ sandboxed renderers cannot read from the asar VFS.
 // Preload scripts inside the asar fail during execution because the eipc origin
 // validator rejects calls from file:// origins. The preloads are extracted to
@@ -205,6 +261,12 @@ if(process.platform==="linux"){
 
 _capp.on("ready",()=>{
   try{if(!_iconFull.isEmpty()&&_capp.setIcon)_capp.setIcon(_iconFull);}catch(ex){}
+
+  // Sync theme from the portal AFTER the app's own init has run (it sets
+  // themeSource="system" from the stored userThemeMode during startup —
+  // we must apply our concrete value after that so ours wins). The delay
+  // covers the async init; the focus handler below keeps it fresh.
+  setTimeout(_cdhSyncThemeFromPortal,1500);
 
   // Create VM bundle marker files so the download-status check returns "Ready".
   // On Linux we run Claude Code natively (no VM), but the app checks for the
@@ -398,7 +460,13 @@ _capp.on("browser-window-created",(e,w)=>{
   const _wtag=()=>"[win#"+_wid+":"+JSON.stringify(w.isDestroyed()?"<destroyed>":w.getTitle())+"]";
   w.on("show",  ()=>console.log("[cowork-linux]",_wtag(),"show  visible="+w.isVisible()+" focused="+w.isFocused()));
   w.on("hide",  ()=>console.log("[cowork-linux]",_wtag(),"hide"));
-  w.on("focus", ()=>console.log("[cowork-linux]",_wtag(),"focus"));
+  w.on("focus", ()=>{
+    console.log("[cowork-linux]",_wtag(),"focus");
+    // Re-sync theme on focus — catches the case where the user changed
+    // their system dark/light mode while the app was in the background,
+    // without needing a persistent portal-monitor subprocess.
+    _cdhSyncThemeFromPortal();
+  });
   w.on("blur",  ()=>console.log("[cowork-linux]",_wtag(),"blur  visible="+w.isVisible()));
   w.on("close", ()=>console.log("[cowork-linux]",_wtag(),"close"));
   w.on("closed",()=>console.log("[cowork-linux] [win#"+_wid+"] closed"));
