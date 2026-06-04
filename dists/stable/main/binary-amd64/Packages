@@ -132,6 +132,28 @@ Description: Claude Desktop for Linux (hardened)
 
 Package: claude-desktop-hardened
 Architecture: amd64
+Version: 1.11187.0
+Priority: optional
+Section: utils
+Maintainer: Claude Desktop Linux Maintainers
+Provides: claude-desktop
+Depends: nodejs (>= 18.0.0), npm, p7zip-full, xdg-utils, bubblewrap
+Recommends: gnome-keyring
+Suggests: wmctrl, xdotool, scrot, xclip, x11-xserver-utils,
+ grim, slurp, wl-clipboard, ydotool, wlr-randr
+Conflicts: claude-desktop
+Filename: pool/main/claude-desktop-hardened_1.11187.0_amd64.deb
+Size: 28930538
+MD5sum: 1e8f529f2c01b919e132e0a35304515c
+SHA1: 0a46fae6821956b0c35159d7e8b638929b9b66f0
+SHA256: 9a10c1a0af537d829a4d01f0f5c246e1899ce16db31a265b5ebd0140969a8f3d
+SHA512: 25176c270d2f414d0074e3091691f3e15cda6ee3088d4f1730c71297177f1fe2f34792a7306719cf7defd16e3d7c0e8b7186ad3a236cacfb04a597d11a528b24
+Homepage: https://github.com/techtoboggan/claude-desktop-hardened-linux
+Description: Claude Desktop for Linux (hardened)
+ Claude is an AI assistant from Anthropic. This package provides the desktop interface for Claude with Cowork (Local Agent Mode) support for Linux. Includes bubblewrap sandboxing, credential redaction, and bundled Claude Code CLI.
+
+Package: claude-desktop-hardened
+Architecture: amd64
 Version: 1.1348.0
 Priority: optional
 Section: utils
