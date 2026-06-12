@@ -37,8 +37,16 @@ options=('!strip' '!debug')
 # The release asset IS a prebuilt Arch package. We fetch it and unpack only
 # its payload (usr/) in package(); noextract stops makepkg from auto-unpacking
 # it (which would also dump .PKGINFO/.MTREE into srcdir).
-_pkgfile="claude-desktop-hardened-bin-${pkgver}-${pkgrel}-x86_64.pkg.tar.zst"
-source=("${_pkgfile}::${url}/releases/download/v${pkgver}-${pkgrel}/${_pkgfile}")
+#
+# @@PKGFILE@@ (the exact asset filename) and @@TAG@@ (the release tag) are
+# substituted by publish-aur from the actual release — NOT reconstructed
+# from pkgver/pkgrel. They diverge: the AUR pkgrel tracks the release build
+# number (e.g. 4), but the artifact's own filename carries the CI-internal
+# pkgrel which is always 1 (claude-desktop-hardened-bin-<ver>-1-x86_64...),
+# and the download path uses the release tag (v<ver>-4). Discovering both
+# avoids guessing.
+_pkgfile="@@PKGFILE@@"
+source=("${_pkgfile}::${url}/releases/download/@@TAG@@/${_pkgfile}")
 noextract=("${_pkgfile}")
 sha256sums=('@@SHA256@@')
 

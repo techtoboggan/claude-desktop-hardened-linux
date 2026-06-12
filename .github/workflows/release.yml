@@ -465,22 +465,35 @@ jobs:
           cd /tmp/aur
 
           BUILDNUM=$(echo "$TAG" | grep -oP '\d+$')
-          PKGFILE="claude-desktop-hardened-bin-${VERSION}-${BUILDNUM}-x86_64.pkg.tar.zst"
 
-          # The AUR package downloads the prebuilt release artifact, so it
-          # needs that artifact's sha256. Pull it from the release's
-          # SHA256SUMS (published by the `release` job we depend on).
+          # DISCOVER the actual arch asset filename from the release rather
+          # than constructing it. The artifact's internal pkgrel (always 1,
+          # from CI's PKGBUILD.in) differs from the release tag's build
+          # number, so a constructed name would mismatch (see issue #5
+          # follow-up). Match the bin .pkg.tar.zst asset by glob.
+          PKGFILE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name | select(test("^claude-desktop-hardened-bin-.*-x86_64\\.pkg\\.tar\\.zst$"))' | head -1)
+          if [ -z "$PKGFILE" ]; then
+            echo "::error::No arch bin artifact found on release $TAG"; exit 1
+          fi
+
+          # Pull that artifact's sha256 from the release's SHA256SUMS.
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D /tmp/sums --clobber
           SHA256=$(grep -F "$PKGFILE" /tmp/sums/SHA256SUMS | awk '{print $1}' | head -1)
           if [ -z "$SHA256" ]; then
             echo "::error::Could not find sha256 for $PKGFILE in SHA256SUMS"; cat /tmp/sums/SHA256SUMS; exit 1
           fi
-          echo "Artifact $PKGFILE sha256=$SHA256"
+          echo "Artifact $PKGFILE  tag=$TAG  sha256=$SHA256"
 
           # Build the AUR PKGBUILD from the self-contained template (the
           # CI-build template PKGBUILD.in needs a local staging dir and
-          # would fail for standalone makepkg — see issue #5).
-          sed "s/@@VERSION@@/${VERSION}/g; s/^pkgrel=.*/pkgrel=${BUILDNUM}/; s/@@SHA256@@/${SHA256}/g" \
+          # would fail for standalone makepkg — see issue #5). Substitute
+          # discovered filename + tag so the download URL is exact.
+          sed -e "s/@@VERSION@@/${VERSION}/g" \
+              -e "s/^pkgrel=.*/pkgrel=${BUILDNUM}/" \
+              -e "s/@@SHA256@@/${SHA256}/g" \
+              -e "s/@@PKGFILE@@/${PKGFILE}/g" \
+              -e "s/@@TAG@@/${TAG}/g" \
             "$GITHUB_WORKSPACE/packaging/arch/PKGBUILD.aur.in" > PKGBUILD
 
           # Regenerate .SRCINFO (copy PKGBUILD to temp dir to avoid .git permission issues)
