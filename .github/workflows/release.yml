@@ -448,6 +448,7 @@ jobs:
       - name: Update AUR package
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.check-version.outputs.version }}
           TAG: ${{ needs.check-version.outputs.tag }}
         if: env.AUR_SSH_KEY != ''
@@ -463,11 +464,24 @@ jobs:
           git clone ssh://aur@aur.archlinux.org/claude-desktop-hardened-bin.git /tmp/aur
           cd /tmp/aur
 
-          # Build PKGBUILD from our template (source of truth) so that content
-          # changes — optdepends, descriptions, etc. — propagate automatically.
           BUILDNUM=$(echo "$TAG" | grep -oP '\d+$')
-          sed "s/@@VERSION@@/${VERSION}/g; s/^pkgrel=.*/pkgrel=${BUILDNUM}/" \
-            "$GITHUB_WORKSPACE/packaging/arch/PKGBUILD.in" > PKGBUILD
+          PKGFILE="claude-desktop-hardened-bin-${VERSION}-${BUILDNUM}-x86_64.pkg.tar.zst"
+
+          # The AUR package downloads the prebuilt release artifact, so it
+          # needs that artifact's sha256. Pull it from the release's
+          # SHA256SUMS (published by the `release` job we depend on).
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D /tmp/sums --clobber
+          SHA256=$(grep -F "$PKGFILE" /tmp/sums/SHA256SUMS | awk '{print $1}' | head -1)
+          if [ -z "$SHA256" ]; then
+            echo "::error::Could not find sha256 for $PKGFILE in SHA256SUMS"; cat /tmp/sums/SHA256SUMS; exit 1
+          fi
+          echo "Artifact $PKGFILE sha256=$SHA256"
+
+          # Build the AUR PKGBUILD from the self-contained template (the
+          # CI-build template PKGBUILD.in needs a local staging dir and
+          # would fail for standalone makepkg — see issue #5).
+          sed "s/@@VERSION@@/${VERSION}/g; s/^pkgrel=.*/pkgrel=${BUILDNUM}/; s/@@SHA256@@/${SHA256}/g" \
+            "$GITHUB_WORKSPACE/packaging/arch/PKGBUILD.aur.in" > PKGBUILD
 
           # Regenerate .SRCINFO (copy PKGBUILD to temp dir to avoid .git permission issues)
           docker run --rm -v "$(pwd)/PKGBUILD:/tmp/PKGBUILD:ro" archlinux@sha256:8435d30c1462f94345c3894ebbeaeecd658fcb284aa41b0bcc5f88728933447f bash -c \
