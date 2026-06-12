@@ -225,11 +225,50 @@ if(process.platform==="linux"){
       }
     }
   };
+
+  // Helper: normalize upstream's small dialog windows for Linux.
+  //
+  // Windows like Help → About, "Verify sign-in code", etc. are created
+  // with titleBarStyle:"hidden" (macOS expects to draw traffic lights
+  // over the content) + modal:true + parent:mainWindow. On Linux/Wayland
+  // this produces TWO bugs:
+  //   1. No native controls — "hidden" titlebar with no titleBarOverlay
+  //      means the window has no close button on a Wayland CSD compositor.
+  //   2. Loses focus instantly — a modal child window on Wayland (KDE)
+  //      fails the modal grab and focus snaps back to the parent.
+  //
+  // Fix: for fixed-size dialog windows (resizable:false, not transparent,
+  // not explicitly frameless), give them a real native frame and drop
+  // modal. KWin then draws proper server-side decorations (real title
+  // bar + close button) and treats the window as a normal focusable
+  // dialog. We DON'T touch:
+  //   - the main window (resizable, no parent) — it uses our merged CSD
+  //   - the quick-entry overlay (transparent:true, frame:false)
+  //   - our own 3P setup window (already framed)
+  const _normalizeDialogWindow=function(opts){
+    if(!opts)return;
+    const isFixedDialog=opts.titleBarStyle==="hidden"
+      && opts.resizable===false
+      && opts.transparent!==true
+      && opts.frame!==false;
+    if(!isFixedDialog)return;
+    // Real native frame → native controls + draggable titlebar.
+    delete opts.titleBarStyle;
+    delete opts.titleBarOverlay;
+    opts.frame=true;
+    // Drop modal so Wayland doesn't steal focus back to the parent.
+    // Keep `parent` so the dialog still groups with / stays above the
+    // main window — that part works fine on Wayland.
+    if(opts.modal)opts.modal=false;
+    console.log("[cowork-linux] dialog window normalized for Linux (frame+non-modal):",
+      (opts.title&&typeof opts.title==="string")?opts.title:"<dynamic title>");
+  };
   const _electron=require("electron");
   const _OrigBW=_electron.BrowserWindow;
   const _BWProxy=new Proxy(_OrigBW,{
     construct(target,args){
       _redirectPreload(args[0]||{});
+      _normalizeDialogWindow(args[0]||{});
       return Reflect.construct(target,args,target);
     }
   });
