@@ -25,6 +25,11 @@ build_package() {
     cp -r "$INSTALL_DIR/bin/"* "$DEB_ROOT/usr/bin/"
     cp -r "$INSTALL_DIR/share/applications/"* "$DEB_ROOT/usr/share/applications/"
     cp -r "$INSTALL_DIR/share/icons/"* "$DEB_ROOT/usr/share/icons/"
+    # AppStream metainfo (GNOME Software / KDE Discover discoverability + updates)
+    if [ -d "$INSTALL_DIR/share/metainfo" ]; then
+        mkdir -p "$DEB_ROOT/usr/share/metainfo"
+        cp -r "$INSTALL_DIR/share/metainfo/"* "$DEB_ROOT/usr/share/metainfo/"
+    fi
     if [ -d "$INSTALL_DIR/share/$PACKAGE_NAME" ]; then
         mkdir -p "$DEB_ROOT/usr/share/$PACKAGE_NAME"
         cp -r "$INSTALL_DIR/share/$PACKAGE_NAME/"* "$DEB_ROOT/usr/share/$PACKAGE_NAME/"

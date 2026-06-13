@@ -446,19 +446,39 @@ if(process.platform==="linux"&&(process.env.XDG_SESSION_TYPE==="wayland"||proces
       }
     }catch(err){console.log("[cowork-linux]",_tag,"activate failed:",err.message);}
   };
+  // Should _activateWayland run for this window? It activates the FIRST
+  // "claude" window the compositor finds — which is the MAIN window — to
+  // bring it forward when restoring from the tray. For ANY OTHER window
+  // (the About dialog, our 3rd-party setup window, etc.) running it steals
+  // focus back to main, leaving the dialog behind/unfocused. So only run
+  // it for the main window: no parent (dialogs set parent:mainWindow) and
+  // not one of our own tagged sub-windows.
+  const _isMainWindow=function(w){
+    try{
+      if(w.__cdhSkipInject)return false;       // our own sub-windows (3P setup)
+      if(w.getParentWindow&&w.getParentWindow())return false; // child dialogs
+      return true;
+    }catch(_){return true;}
+  };
   require("electron").BrowserWindow.prototype.show=function(){
     const _sid=this.id;
     console.log("[cowork-linux] [win:show] id="+_sid+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible()+" focused="+this.isFocused());
     _origShow.call(this);
-    // Delay activation: give the compositor time to map the surface before
-    // requesting focus. Without this, the activation request races the
-    // surface-map and KWin may not find the window yet.
-    setTimeout(()=>{ _activateWayland("show:"+_sid); },80);
+    // Only activate the MAIN window — activating for dialogs/sub-windows
+    // steals focus back to main (the focus-steal bug on About + 3P setup).
+    if(_isMainWindow(this)){
+      // Delay activation: give the compositor time to map the surface before
+      // requesting focus. Without this, the activation request races the
+      // surface-map and KWin may not find the window yet.
+      setTimeout(()=>{ _activateWayland("show:"+_sid); },80);
+    }else{
+      console.log("[cowork-linux] [win:show] id="+_sid+" skipping activate (dialog/sub-window keeps its own focus)");
+    }
   };
   require("electron").BrowserWindow.prototype.focus=function(){
     console.log("[cowork-linux] [win:focus] id="+this.id+" title="+JSON.stringify(this.getTitle())+" visible="+this.isVisible());
     _origFocus.call(this);
-    _activateWayland("focus:"+this.id);
+    if(_isMainWindow(this))_activateWayland("focus:"+this.id);
   };
 }
 
@@ -2020,6 +2040,46 @@ Actions=quit;
 [Desktop Action quit]
 Name=Quit Claude
 Exec=sh -c 'pkill -f "electron.*claude-desktop-hardened/app.asar" || pkill -f claude-desktop-hardened'
+EOF
+
+    # AppStream metainfo — makes the app (and its updates) appear in
+    # GNOME Software and KDE Discover. Without this, COPR package updates
+    # only surface via the dnf CLI; the GUI software centres don't show
+    # the app as an updatable application. COPR runs appstream-builder on
+    # repos containing metainfo, which generates the AppStream catalog the
+    # GUIs consume. The <release> entry is stamped with the build version.
+    mkdir -p "$INSTALL_DIR/share/metainfo"
+    cat > "$INSTALL_DIR/share/metainfo/claude-desktop-hardened.metainfo.xml" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.techtoboggan.claude-desktop-hardened</id>
+  <launchable type="desktop-id">claude-desktop-hardened.desktop</launchable>
+  <name>Claude (Hardened)</name>
+  <summary>Claude Desktop for Linux, hardened with bubblewrap sandboxing</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <description>
+    <p>
+      Claude is an AI assistant from Anthropic. This package provides the
+      desktop interface for Claude with Cowork (Local Agent Mode) support
+      for Linux, including bubblewrap sandboxing, credential redaction, a
+      bundled Claude Code CLI, and native Wayland integration.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/techtoboggan/claude-desktop-hardened-linux</url>
+  <url type="bugtracker">https://github.com/techtoboggan/claude-desktop-hardened-linux/issues</url>
+  <developer id="io.github.techtoboggan">
+    <name>Tristan (techtoboggan)</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Office</category>
+    <category>Utility</category>
+  </categories>
+  <releases>
+    <release version="${VERSION}" date="$(date -u +%Y-%m-%d)"/>
+  </releases>
+</component>
 EOF
 
     # Launcher script with Wayland detection, keyring support, logging
