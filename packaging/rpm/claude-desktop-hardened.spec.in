@@ -88,6 +88,11 @@ cp -a @@INSTALL_DIR@@/lib/%{name}/. %{buildroot}/usr/lib64/%{name}/
 cp -r @@INSTALL_DIR@@/bin/* %{buildroot}/usr/bin/
 cp -r @@INSTALL_DIR@@/share/applications/* %{buildroot}/usr/share/applications/
 cp -r @@INSTALL_DIR@@/share/icons/* %{buildroot}/usr/share/icons/
+# AppStream metainfo (GNOME Software / KDE Discover discoverability + updates)
+if [ -d "@@INSTALL_DIR@@/share/metainfo" ]; then
+    mkdir -p %{buildroot}/usr/share/metainfo
+    cp -r @@INSTALL_DIR@@/share/metainfo/* %{buildroot}/usr/share/metainfo/
+fi
 if [ -d "@@INSTALL_DIR@@/share/%{name}" ]; then
     mkdir -p %{buildroot}/usr/share/%{name}
     cp -r @@INSTALL_DIR@@/share/%{name}/* %{buildroot}/usr/share/%{name}/
@@ -98,6 +103,7 @@ fi
 %{_bindir}/claude
 /usr/lib64/claude-desktop-hardened/
 %{_datadir}/applications/claude-desktop-hardened.desktop
+%{_datadir}/metainfo/claude-desktop-hardened.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/claude-desktop-hardened.png
 %{_datadir}/claude-desktop-hardened/
 
