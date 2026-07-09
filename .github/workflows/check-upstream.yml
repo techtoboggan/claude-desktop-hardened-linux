@@ -132,6 +132,13 @@ jobs:
             echo "status=passed" >> "$GITHUB_OUTPUT"
           else
             echo "status=failed" >> "$GITHUB_OUTPUT"
+            # Fail the job so a broken build shows RED in the Actions tab
+            # instead of a misleading green check (the earlier build step is
+            # continue-on-error, which previously left this job green even
+            # when patches failed — that's how a 3-week outage went unnoticed).
+            # The status output is written above BEFORE exiting, so the
+            # downstream open-issue job (guarded with always()) still fires.
+            exit 1
           fi
 
     outputs:
@@ -199,7 +206,9 @@ jobs:
   # -------------------------------------------------------------------------
   open-issue:
     needs: [check, test-build]
-    if: needs.test-build.outputs.status == 'failed'
+    # always() so this still runs now that a failed test-build fails the job
+    # (a needed-job failure would otherwise skip this despite the condition).
+    if: always() && needs.test-build.outputs.status == 'failed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
