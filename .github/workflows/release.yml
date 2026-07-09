@@ -45,7 +45,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
@@ -103,13 +103,13 @@ jobs:
       - name: Install git
         run: dnf install -y git
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build RPM
         shell: bash
         run: FORMAT=rpm ./build.sh
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rpm-package
           path: build/electron-app/**/*.rpm
@@ -123,13 +123,13 @@ jobs:
       - name: Install git
         run: apt-get update -qq && apt-get install -y -qq git sudo
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build DEB
         shell: bash
         run: FORMAT=deb ./build.sh
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deb-package
           path: build/electron-app/**/*.deb
@@ -143,13 +143,13 @@ jobs:
       - name: Install git
         run: pacman -Sy --noconfirm git
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Build Arch package
         shell: bash
         run: FORMAT=arch ./build.sh
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: arch-package
           path: |
@@ -165,7 +165,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Generate CycloneDX SBOM
         run: |
@@ -173,7 +173,7 @@ jobs:
           cdxgen -o sbom.json --spec-version 1.5 .
           echo "SBOM: $(jq '.components | length' sbom.json) components"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom
           path: sbom.json
@@ -187,7 +187,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Create tag
         env:
@@ -198,7 +198,7 @@ jobs:
             -f ref="refs/tags/${{ needs.check-version.outputs.tag }}" \
             -f sha="${{ github.sha }}" || echo "Tag may already exist"
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
 
@@ -224,7 +224,7 @@ jobs:
           echo "Checksums signed with GPG"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ needs.check-version.outputs.tag }}
           name: Claude Desktop ${{ needs.check-version.outputs.version }} (build ${{ needs.check-version.outputs.tag }})
@@ -310,7 +310,7 @@ jobs:
             --pattern "*.rpm" \
             --dir ./rpms
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           path: source
 
@@ -365,7 +365,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: gh-pages
           fetch-depth: 0
@@ -443,7 +443,7 @@ jobs:
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Update AUR package
         env:

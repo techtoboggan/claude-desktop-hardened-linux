@@ -10,6 +10,17 @@ def apply(content):
     The Claude Code binary manager maps process.platform/arch to a
     platform string. It only handles "darwin" and "win32", throwing on Linux.
     """
+    # Upstream started shipping a native Linux case in getHostPlatform() around
+    # 1.20186.0. If it's already there, do nothing — otherwise the fallback
+    # below would insert a duplicate (dead, but sloppy) linux branch.
+    if re.search(
+        r'getHostPlatform\(\)\{[^}]*process\.platform==="linux"[^}]*'
+        r'return[^;]*"linux-arm64"',
+        content,
+    ):
+        print('  [ok] getHostPlatform() already supports Linux upstream — nothing to patch')
+        return content, True
+
     pattern = (
         r'getHostPlatform\(\)\{const (\w)=process\.arch;'
         r'if\(process\.platform==="darwin"\)return \1==="arm64"\?"darwin-arm64":"darwin-x64";'

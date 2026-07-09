@@ -39,11 +39,35 @@ if (!asarDir || !fs.existsSync(asarDir)) {
   process.exit(1);
 }
 
-const mainJs = path.join(asarDir, '.vite', 'build', 'index.js');
+// Since upstream 1.13576.0, `.vite/build/index.js` is a thin (~800 byte) Vite
+// loader that just `require("./index.chunk-<hash>.js")`s the real code. The
+// window-decoration code we patch moved into that sibling chunk, whose hash
+// changes every release. Resolve the loader to its largest required sibling
+// (the main chunk dwarfs everything else); fall back to the entry itself for
+// old monolithic bundles. Mirrors patches/base.py:_resolve_loader_chunk.
+const THIN_LOADER_MAX_BYTES = 100000;
+function resolveMainJs(entry) {
+  if (!fs.existsSync(entry)) return entry;
+  if (fs.statSync(entry).size > THIN_LOADER_MAX_BYTES) return entry;
+  const loader = fs.readFileSync(entry, 'utf8');
+  const dir = path.dirname(entry);
+  const siblings = [];
+  const re = /require\((?:"|')(\.\/[^"']+\.js)(?:"|')\)/g;
+  let m;
+  while ((m = re.exec(loader)) !== null) {
+    const cand = path.normalize(path.join(dir, m[1]));
+    if (fs.existsSync(cand) && fs.statSync(cand).isFile()) siblings.push(cand);
+  }
+  if (siblings.length === 0) return entry;
+  return siblings.reduce((a, b) => (fs.statSync(b).size > fs.statSync(a).size ? b : a));
+}
+
+const mainJs = resolveMainJs(path.join(asarDir, '.vite', 'build', 'index.js'));
 if (!fs.existsSync(mainJs)) {
   console.error(`Not found: ${mainJs}`);
   process.exit(1);
 }
+console.log(`  Target: ${path.relative(asarDir, mainJs)}`);
 
 let code = fs.readFileSync(mainJs, 'utf8');
 let patchCount = 0;
@@ -168,25 +192,30 @@ console.log('Patching window decorations for Linux CSD...');
 // ---------------------------------------------------------------------------
 // 4. Claude WebContentsView y-offset: 0 → 40 (Linux titlebar inset)
 // ---------------------------------------------------------------------------
-// The upstream resize handler for the Claude view looks like:
+// The upstream resize handler for the Claude view has taken two shapes:
 //
-//   <var>=0;<view>.setBounds({x:0,y:<var>,width:<bounds>.width,height:<bounds>.height-<var>})
+//   old (≤1.12603.1, monolithic):
+//     <var>=0;<view>.setBounds({x:0,y:<var>,width:<b>.width,height:<b>.height-<var>})
+//   new (≥1.13576.0, chunked):
+//     …,<var>=0,<s>=<view>.getBounds();return <view>.setBounds({x:0,y:<var>,…})
 //
-// Minifier picks short names for <var>/<view>/<bounds>, and they change
-// every release (h→u, p→E, etc). We match by SHAPE using backreferences:
+// i.e. the `<var>=0` offset used to be glued to the setBounds with a `;`, but
+// now sits in a comma-declaration ahead of a `return <view>.setBounds(…)`. We
+// match BOTH by allowing the separator to be `;` or `,` and letting an
+// optional `[^{}]` middle span whatever sits between the assignment and the
+// setBounds call (getBounds()/return in the new form, nothing in the old).
 //
-//   \1 = offset variable (was `h`, now `u`, …)
-//   \2 = view variable   (stable: `o`)
-//   \3 = bounds variable (was `p`, now `E`, …)
-//
-// The backreferences `y:\1`, `\3.width`, `\3.height-\1` enforce internal
-// consistency so the regex only matches the real resize handler — not
-// any other line that happens to start with a similar prefix.
+// Minifier names change every release, so we key on SHAPE via backreferences:
+//   \1 = offset variable (the `=0` we bump to `=40`)
+//   \3 = bounds variable (its .width / .height feed the setBounds)
+// Group 2 captures the whole tail so the replacement just flips `=0`→`=40`
+// and re-emits \2 verbatim. The backrefs `y:\1`, `\3.width`, `\3.height-\1`
+// enforce internal consistency so we only match the real resize handler.
 {
   const name = 'Claude view y-offset: 0 → 40 (Linux titlebar inset)';
-  const sourcePattern = /([A-Za-z_$][\w$]*)=0;([A-Za-z_$][\w$]*)\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\)/g;
-  const alreadyAppliedPattern = /([A-Za-z_$][\w$]*)=40;([A-Za-z_$][\w$]*)\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\)/;
-  const n = replaceCount(sourcePattern, '$1=40;$2.setBounds({x:0,y:$1,width:$3.width,height:$3.height-$1})', { maxMatches: 1 });
+  const offsetTail = /([A-Za-z_$][\w$]*)=0([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/g;
+  const alreadyAppliedPattern = /([A-Za-z_$][\w$]*)=40([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
+  const n = replaceCount(offsetTail, '$1=40$2', { maxMatches: 1 });
   if (n > 0) logApplied(name, n);
   else if (alreadyAppliedPattern.test(code)) logAlready(name);
   else logSkip(name); // verified below
@@ -214,10 +243,10 @@ const criticalChecks = [
   {
     name: 'Claude view y-offset is 40 (not 0)',
     assert: () => {
-      // There must be exactly one match of the structural pattern with =40,
+      // There must be at least one match of the structural pattern with =40,
       // and zero matches with =0.
-      const patched = /([A-Za-z_$][\w$]*)=40;([A-Za-z_$][\w$]*)\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\)/;
-      const unpatched = /([A-Za-z_$][\w$]*)=0;([A-Za-z_$][\w$]*)\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\)/;
+      const patched = /([A-Za-z_$][\w$]*)=40([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
+      const unpatched = /([A-Za-z_$][\w$]*)=0([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
       return patched.test(code) && !unpatched.test(code);
     },
   },
