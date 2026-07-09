@@ -192,28 +192,29 @@ console.log('Patching window decorations for Linux CSD...');
 // ---------------------------------------------------------------------------
 // 4. Claude WebContentsView y-offset: 0 → 40 (Linux titlebar inset)
 // ---------------------------------------------------------------------------
-// The upstream resize handler for the Claude view looks like (1.20186.0):
+// The upstream resize handler for the Claude view has taken two shapes:
 //
-//   const <b>=o.getContentBounds(),<var>=0,<s>=<view>.getBounds();
-//   return <view>.setBounds({x:0,y:<var>,width:<bounds>.width,height:<bounds>.height-<var>})
+//   old (≤1.12603.1, monolithic):
+//     <var>=0;<view>.setBounds({x:0,y:<var>,width:<b>.width,height:<b>.height-<var>})
+//   new (≥1.13576.0, chunked):
+//     …,<var>=0,<s>=<view>.getBounds();return <view>.setBounds({x:0,y:<var>,…})
 //
-// The offset `<var>=0` now lives in a comma-declaration ahead of the
-// setBounds call (it used to be glued directly: `<var>=0;<view>.setBounds`).
-// Minifier picks short names for all of them and they change every release,
-// so we match by SHAPE using backreferences:
+// i.e. the `<var>=0` offset used to be glued to the setBounds with a `;`, but
+// now sits in a comma-declaration ahead of a `return <view>.setBounds(…)`. We
+// match BOTH by allowing the separator to be `;` or `,` and letting an
+// optional `[^{}]` middle span whatever sits between the assignment and the
+// setBounds call (getBounds()/return in the new form, nothing in the old).
 //
+// Minifier names change every release, so we key on SHAPE via backreferences:
 //   \1 = offset variable (the `=0` we bump to `=40`)
 //   \3 = bounds variable (its .width / .height feed the setBounds)
-//
-// Group 2 captures the whole tail (`,…;return <view>.setBounds({…})`) so the
-// replacement only has to flip `=0`→`=40` and re-emit \2 verbatim. The
-// `[^{}]` middle keeps the match inside a single statement. The backrefs
-// `y:\1`, `\3.width`, `\3.height-\1` enforce internal consistency so the
-// regex only matches the real resize handler.
+// Group 2 captures the whole tail so the replacement just flips `=0`→`=40`
+// and re-emits \2 verbatim. The backrefs `y:\1`, `\3.width`, `\3.height-\1`
+// enforce internal consistency so we only match the real resize handler.
 {
   const name = 'Claude view y-offset: 0 → 40 (Linux titlebar inset)';
-  const offsetTail = /([A-Za-z_$][\w$]*)=0([,;][^{}]{0,120}?return [A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/g;
-  const alreadyAppliedPattern = /([A-Za-z_$][\w$]*)=40([,;][^{}]{0,120}?return [A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
+  const offsetTail = /([A-Za-z_$][\w$]*)=0([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/g;
+  const alreadyAppliedPattern = /([A-Za-z_$][\w$]*)=40([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
   const n = replaceCount(offsetTail, '$1=40$2', { maxMatches: 1 });
   if (n > 0) logApplied(name, n);
   else if (alreadyAppliedPattern.test(code)) logAlready(name);
@@ -244,8 +245,8 @@ const criticalChecks = [
     assert: () => {
       // There must be at least one match of the structural pattern with =40,
       // and zero matches with =0.
-      const patched = /([A-Za-z_$][\w$]*)=40([,;][^{}]{0,120}?return [A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
-      const unpatched = /([A-Za-z_$][\w$]*)=0([,;][^{}]{0,120}?return [A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
+      const patched = /([A-Za-z_$][\w$]*)=40([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
+      const unpatched = /([A-Za-z_$][\w$]*)=0([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
       return patched.test(code) && !unpatched.test(code);
     },
   },
