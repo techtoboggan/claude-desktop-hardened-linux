@@ -1188,6 +1188,21 @@ const moduleExport = {
 
 module.exports = moduleExport;
 
+// Event subscription no-ops. Upstream does
+// `(await import("@ant/claude-swift")).default.on("watchRecordInput", cb)` to
+// subscribe to native Swift input-recording events. There are no such events on
+// Linux, so accept and ignore subscriptions (without `.on` the app logs
+// "failed to subscribe to swift events: .default.on is not a function").
+if (typeof moduleExport.on !== 'function') {
+  moduleExport.on = () => moduleExport;
+  moduleExport.off = () => moduleExport;
+  moduleExport.once = () => moduleExport;
+  moduleExport.addListener = () => moduleExport;
+  moduleExport.removeListener = () => moduleExport;
+  moduleExport.removeAllListeners = () => moduleExport;
+  moduleExport.emit = () => false;
+}
+
 // Also attach flat convenience exports for require() consumers (cowork stubs)
 module.exports.SwiftAddonStub = SwiftAddonStub;
 module.exports.default = moduleExport;
