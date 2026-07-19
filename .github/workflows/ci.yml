@@ -26,7 +26,7 @@ jobs:
 
       - name: Detect trojan source (Unicode/bidirectional attacks)
         run: |
-          npx anti-trojan-source@1.8.1 --files='{stubs/**/*.js,lib/**/*.sh,scripts/**/*.js,enable-cowork.py}' --verbose || {
+          npx anti-trojan-source@1.8.1 --files='{lib/**/*.sh,scripts/**/*.sh,build.sh}' --verbose || {
             EXIT_CODE=$?
             if [ "$EXIT_CODE" -eq 1 ]; then
               echo "::warning::Confusable characters found (emoji variation selectors, etc.) — review above"
@@ -39,10 +39,10 @@ jobs:
       - name: Detect suspicious patterns in shell scripts
         run: |
           echo "Checking for encoded payloads, eval abuse, and suspicious downloads..."
-          if grep -rn 'base64 -d\|base64 --decode' lib/ stubs/ scripts/ 2>/dev/null | grep -v '.git'; then
+          if grep -rn 'base64 -d\|base64 --decode' lib/ scripts/ build.sh 2>/dev/null | grep -v '.git'; then
             echo "::warning::Found base64 decode operations - verify these are intentional"
           fi
-          if grep -rn 'curl.*|.*sh\|wget.*|.*sh\|curl.*|.*bash\|wget.*|.*bash' lib/ stubs/ 2>/dev/null | grep -v '.git'; then
+          if grep -rn 'curl.*|.*sh\|wget.*|.*sh\|curl.*|.*bash\|wget.*|.*bash' lib/ scripts/ build.sh 2>/dev/null | grep -v '.git'; then
             echo "::error::Found curl/wget piped to shell - this is a supply chain risk"
             exit 1
           fi
@@ -104,18 +104,16 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Run unit tests (Node.js)
+      # Since the 2026-07 pivot we repackage the official Linux .deb (no
+      # app.asar patching / native stubs), so the old stub/patch unit tests are
+      # gone. What remains to lint is our shell tooling.
+      - name: Shell syntax check (build pipeline + generated launcher)
         run: |
-          node --test tests/test_credential_classifier.js
-          node --test tests/test_path_safety.js
-          node --test tests/test_computer_use.js
-          node --test tests/test_bwrap_command.js
-          node --test tests/test_session_store.js
+          for f in build.sh lib/*.sh scripts/*.sh; do
+            echo "checking $f"; bash -n "$f"
+          done
 
-      - name: Run unit tests (Python)
-        run: python3 -m unittest tests/test_patches.py -v
-
-      - name: Run integration tests
+      - name: Run integration tests (doctor)
         run: bash tests/test_doctor.sh
 
   # ---------------------------------------------------------------------------
@@ -159,22 +157,23 @@ jobs:
         shell: bash
         run: FORMAT=${{ matrix.format }} ./build.sh
 
-      - name: Verify nupkg SHA256
+      - name: Verify official .deb SHA256
         shell: bash
         run: |
+          # The build downloads the official Anthropic Linux .deb and verifies
+          # it against the SHA256 pinned in CLAUDE_VERSION (see lib/download.sh).
+          # Re-assert here on the downloaded artifact for defense in depth.
           SHA=$(sed -n '2p' CLAUDE_VERSION | tr -d '[:space:]')
-          if [ -n "$SHA" ]; then
-            NUPKG=$(find build/ -name '*.nupkg' | head -1)
-            if [ -n "$NUPKG" ]; then
-              ACTUAL=$(sha256sum "$NUPKG" | cut -d' ' -f1)
-              if [ "$ACTUAL" != "$SHA" ]; then
-                echo "::error::nupkg SHA256 mismatch: expected $SHA, got $ACTUAL"
-                exit 1
-              fi
-              echo "SHA256 verified: $ACTUAL"
+          DEB=$(find build/ -name 'claude-desktop-official.deb' | head -1)
+          if [ -n "$SHA" ] && [ -n "$DEB" ]; then
+            ACTUAL=$(sha256sum "$DEB" | cut -d' ' -f1)
+            if [ "$ACTUAL" != "$SHA" ]; then
+              echo "::error::official .deb SHA256 mismatch: expected $SHA, got $ACTUAL"
+              exit 1
             fi
+            echo "Official .deb SHA256 verified: $ACTUAL"
           else
-            echo "No SHA256 pin — skipping"
+            echo "No SHA256 pin or .deb not found — skipping"
           fi
 
       - name: Smoke test package contents

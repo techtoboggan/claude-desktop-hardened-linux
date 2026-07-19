@@ -32,22 +32,29 @@ read_tool_versions() {
     fi
 }
 
-# Reads CLAUDE_VERSION file and sets CLAUDE_VERSION_PINNED + CLAUDE_NUPKG_SHA256.
-# Also sets CLAUDE_DOWNLOAD_URL and DOWNLOAD_AS_NUPKG.
+# Reads CLAUDE_VERSION file and sets CLAUDE_VERSION_PINNED + CLAUDE_DEB_SHA256.
+# Also sets CLAUDE_DOWNLOAD_URL.
+#
+# BASE CHANGE (2026-07): we now build from the OFFICIAL Anthropic Claude Desktop
+# Linux .deb (a native Linux build), NOT the Windows win32 nupkg. CLAUDE_VERSION
+# line 1 = official .deb version, line 2 = that .deb's SHA256. The download URL
+# points at Anthropic's official apt pool.
 read_version_pin() {
     CLAUDE_VERSION_PINNED=""
-    CLAUDE_NUPKG_SHA256=""
+    CLAUDE_DEB_SHA256=""
     if [ -f "$SCRIPT_DIR/CLAUDE_VERSION" ]; then
         CLAUDE_VERSION_PINNED=$(sed -n '1p' "$SCRIPT_DIR/CLAUDE_VERSION" | tr -d '[:space:]')
-        CLAUDE_NUPKG_SHA256=$(sed -n '2p' "$SCRIPT_DIR/CLAUDE_VERSION" | tr -d '[:space:]')
+        CLAUDE_DEB_SHA256=$(sed -n '2p' "$SCRIPT_DIR/CLAUDE_VERSION" | tr -d '[:space:]')
     fi
 
+    # Back-compat alias (some packaging templates still reference the old name).
+    CLAUDE_NUPKG_SHA256="$CLAUDE_DEB_SHA256"
+
+    local deb_arch
+    deb_arch=$(arch_to_deb)
+    CLAUDE_APT_BASE="https://downloads.claude.ai/claude-desktop/apt/stable"
     if [ -n "$CLAUDE_VERSION_PINNED" ]; then
-        CLAUDE_DOWNLOAD_URL="https://downloads.claude.ai/releases/win32/x64/AnthropicClaude-${CLAUDE_VERSION_PINNED}-full.nupkg"
-        DOWNLOAD_AS_NUPKG=true
-    else
-        CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
-        DOWNLOAD_AS_NUPKG=false
+        CLAUDE_DOWNLOAD_URL="${CLAUDE_APT_BASE}/pool/main/c/claude-desktop/claude-desktop_${CLAUDE_VERSION_PINNED}_${deb_arch}.deb"
     fi
 }
 

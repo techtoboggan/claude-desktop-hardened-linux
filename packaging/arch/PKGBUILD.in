@@ -2,11 +2,15 @@
 pkgname=claude-desktop-hardened-bin
 pkgver=@@VERSION@@
 pkgrel=1
-pkgdesc="Claude Desktop for Linux (hardened) — bubblewrap sandboxing, credential redaction"
+pkgdesc="Official Claude Desktop Linux build, hardened with bubblewrap sandboxing"
 arch=('x86_64' 'aarch64')
 url="https://github.com/techtoboggan/claude-desktop-hardened-linux"
 license=('custom:Proprietary')
-depends=('nodejs' 'npm' 'electron' 'p7zip' 'icoutils' 'imagemagick' 'xdg-utils' 'bubblewrap')
+# Base is the official Anthropic Linux build (bundled Electron). Deps are the
+# shared libs that binary needs, plus bubblewrap (sandbox) and nodejs (CLI).
+depends=('bubblewrap' 'xdg-utils' 'xdg-desktop-portal' 'nodejs' 'npm'
+         'gtk3' 'nss' 'libnotify' 'libsecret' 'libxtst' 'at-spi2-core'
+         'libdrm' 'libxkbcommon' 'util-linux-libs' 'alsa-lib')
 optdepends=(            'socat: IPC support'
             'gnome-keyring: credential storage'
             'wmctrl: X11 window listing for Computer Use'
@@ -29,8 +33,9 @@ package() {
     # Copy from the staging area prepared by the build pipeline
     cp -r "${srcdir}/staged/usr" "${pkgdir}/usr"
 
-    # Fix chrome-sandbox permissions
-    local sandbox="${pkgdir}/usr/lib/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
+    # Fix chrome-sandbox permissions (bundled Electron; used on the
+    # non-bubblewrap fallback path only).
+    local sandbox="${pkgdir}/usr/lib/claude-desktop-hardened/chrome-sandbox"
     if [ -f "$sandbox" ]; then
         chmod 4755 "$sandbox"
     fi

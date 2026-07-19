@@ -438,9 +438,13 @@ jobs:
   # ---------------------------------------------------------------------------
   # Publish to AUR
   # ---------------------------------------------------------------------------
+  # PAUSED (2026-07): the AUR package was deleted upstream and our CI
+  # re-created it on push. Auto-publishing is disabled until we resolve the
+  # deletion with the AUR maintainers and re-submit deliberately (change
+  # `if: false` back to the should_release condition to re-enable).
   publish-aur:
     needs: [check-version, release]
-    if: needs.check-version.outputs.should_release == 'true'
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
