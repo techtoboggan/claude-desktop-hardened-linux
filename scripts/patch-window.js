@@ -221,6 +221,28 @@ console.log('Patching window decorations for Linux CSD...');
   else logSkip(name); // verified below
 }
 
+// ---------------------------------------------------------------------------
+// 5. Tray icon: Windows .ico → Linux .png
+// ---------------------------------------------------------------------------
+// We build from the win32 nupkg, whose bundle hardcodes the tray-icon FORMAT
+// to "ico". On Linux the tray-icon switch therefore selects Tray-Win32*.ico,
+// which nativeImage.createFromPath cannot decode → the Tray registers a valid
+// StatusNotifierItem but with an EMPTY image → invisible / "no systray". The
+// switch's Linux "png" case is never reached because the format constant stays
+// "ico". Rewrite the ico branch's filenames to the Linux PNGs (which upstream
+// ships in resources/ and Electron reads fine, incl. from inside the asar).
+// Keyed on the stable icon-filename literals, so it survives minifier renames.
+{
+  const name = 'Tray icon: Win32 .ico → Linux .png';
+  const n = replaceCount(
+    /"Tray-Win32-Dark\.ico":"Tray-Win32\.ico"/g,
+    '"TrayIconLinux-Dark.png":"TrayIconLinux.png"'
+  );
+  if (n > 0) logApplied(name, n);
+  else if (code.includes('"TrayIconLinux-Dark.png":"TrayIconLinux.png"')) logAlready(name);
+  else logSkip(name); // verified below
+}
+
 fs.writeFileSync(mainJs, code);
 
 // ---------------------------------------------------------------------------
@@ -249,6 +271,12 @@ const criticalChecks = [
       const unpatched = /([A-Za-z_$][\w$]*)=0([;,][^{}]{0,120}?[A-Za-z_$][\w$]*\.setBounds\(\{x:0,y:\1,width:([A-Za-z_$][\w$]*)\.width,height:\3\.height-\1\}\))/;
       return patched.test(code) && !unpatched.test(code);
     },
+  },
+  {
+    // The undecodable Win32 .ico tray ternary must be gone (replaced with the
+    // Linux PNGs, or absent because upstream shipped a native Linux path).
+    name: 'Tray uses Linux PNG icons (no undecodable Win32 .ico)',
+    assert: () => !/"Tray-Win32-Dark\.ico":"Tray-Win32\.ico"/.test(code),
   },
 ];
 
