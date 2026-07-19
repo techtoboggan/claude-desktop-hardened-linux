@@ -210,6 +210,10 @@ esac
 XRD="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}"
 CFG="\${XDG_CONFIG_HOME:-\$HOME/.config}"
 CACHE="\${XDG_CACHE_HOME:-\$HOME/.cache}"
+# systemd-resolved / NetworkManager make /etc/resolv.conf a symlink into /run.
+# Bind that target dir so DNS resolves inside the sandbox — otherwise the
+# symlink dangles and the app "can't connect to Claude".
+RESOLV_DIR="\$(dirname "\$(readlink -f /etc/resolv.conf 2>/dev/null || echo /etc/resolv.conf)")"
 
 run_direct() {
     # Electron's own sandbox (setuid chrome-sandbox); used when bwrap is off.
@@ -240,6 +244,7 @@ BWRAP_OPTS=(
     --symlink usr/lib /lib --symlink usr/lib64 /lib64
     --symlink usr/bin /bin --symlink usr/sbin /sbin
     --ro-bind-try /etc /etc
+    --ro-bind-try "\$RESOLV_DIR" "\$RESOLV_DIR"
     --ro-bind-try /opt /opt
     --ro-bind-try /sys /sys
     --proc /proc
