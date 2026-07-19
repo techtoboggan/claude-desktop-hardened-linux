@@ -60,6 +60,8 @@ INSTALL_DIR="$PKG_ROOT/usr"
 
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR" "$PKG_ROOT"
+# Package output dir (CI collects artifacts from build/electron-app/**)
+mkdir -p "$WORK_DIR/electron-app"
 mkdir -p "$INSTALL_DIR/lib/$PACKAGE_NAME"
 mkdir -p "$INSTALL_DIR/share/applications"
 mkdir -p "$INSTALL_DIR/share/icons"

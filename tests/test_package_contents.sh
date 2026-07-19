@@ -61,11 +61,14 @@ if [ -z "$LISTING" ]; then
 fi
 
 has_file() {
-    echo "$LISTING" | grep -qF "$1"
+    # Here-string (not `echo | grep -q`): with `set -o pipefail`, grep -q
+    # closing the pipe on an early match sends SIGPIPE to echo, which pipefail
+    # then reports as a failure — a false negative for early-listed files.
+    grep -qF "$1" <<< "$LISTING"
 }
 
 has_pattern() {
-    echo "$LISTING" | grep -qE "$1"
+    grep -qE "$1" <<< "$LISTING"
 }
 
 echo "=== Package Content Tests ($FORMAT) ==="
@@ -80,18 +83,15 @@ check "launcher exists" has_file "/usr/bin/claude-desktop-hardened"
 check "CLI wrapper exists" has_file "/usr/bin/claude"
 
 # -------------------------------------------------------------------------
-# Core app files
+# Core app files — the OFFICIAL Linux payload, unmodified. app.asar lives
+# under resources/ in the official .deb layout; the bundled Electron binary
+# and its chrome-sandbox come straight from the official build.
 # -------------------------------------------------------------------------
-echo "--- Core App ---"
-check "app.asar exists" has_file "${LIB_PREFIX}/app.asar"
-check "app.asar.unpacked exists" has_pattern "${LIB_PREFIX}/app.asar.unpacked/"
-
-# -------------------------------------------------------------------------
-# Stubs (cowork, claude-native)
-# -------------------------------------------------------------------------
-echo "--- Stubs ---"
-check "cowork stub exists" has_pattern "${LIB_PREFIX}/app.asar.unpacked/node_modules/cowork/"
-check "claude-native stub exists" has_pattern "${LIB_PREFIX}/app.asar.unpacked/node_modules/.*(claude-native|@ant/claude-native)/"
+echo "--- Core App (official Linux payload) ---"
+check "app.asar exists" has_file "${LIB_PREFIX}/resources/app.asar"
+check "app.asar.unpacked exists" has_pattern "${LIB_PREFIX}/resources/app.asar.unpacked/"
+check "bundled Electron binary exists" has_file "${LIB_PREFIX}/claude-desktop"
+check "bundled chrome-sandbox exists" has_file "${LIB_PREFIX}/chrome-sandbox"
 
 # -------------------------------------------------------------------------
 # Claude Code CLI
@@ -212,9 +212,9 @@ fi
 # Check app.asar is a real file (not empty/truncated)
 ASAR_PATH=""
 if [ "$FORMAT" = "rpm" ]; then
-    ASAR_PATH="$EXTRACT_DIR/usr/lib64/claude-desktop-hardened/app.asar"
+    ASAR_PATH="$EXTRACT_DIR/usr/lib64/claude-desktop-hardened/resources/app.asar"
 else
-    ASAR_PATH="$EXTRACT_DIR/usr/lib/claude-desktop-hardened/app.asar"
+    ASAR_PATH="$EXTRACT_DIR/usr/lib/claude-desktop-hardened/resources/app.asar"
 fi
 if [ -f "$ASAR_PATH" ]; then
     ASAR_SIZE=$(stat -c%s "$ASAR_PATH" 2>/dev/null || stat -f%z "$ASAR_PATH" 2>/dev/null || echo "0")

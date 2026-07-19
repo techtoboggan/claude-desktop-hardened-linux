@@ -6,7 +6,12 @@ License:        Proprietary
 AutoReqProv:    no
 URL:            https://github.com/techtoboggan/claude-desktop-hardened-linux
 BuildArch:      @@ARCHITECTURE@@
-Requires:       nodejs >= 18.0.0, npm, p7zip, xdg-utils, bubblewrap
+# Base is the official Anthropic Linux build (bundled Electron). AutoReqProv is
+# off, so list the shared libraries that bundled Electron binary needs, plus
+# bubblewrap (our enforced sandbox) and nodejs (bundled Claude Code CLI).
+Requires:       bubblewrap, xdg-utils, xdg-desktop-portal, nodejs >= 18.0.0, npm
+Requires:       gtk3, nss, libnotify, libXtst, libsecret, libdrm, mesa-libgbm
+Requires:       libuuid, at-spi2-atk, at-spi2-core, alsa-lib, libxkbcommon
 Recommends:     gnome-keyring
 # X11 Computer Use tools
 Suggests:       wmctrl, xdotool, scrot, xclip, xrandr
@@ -117,11 +122,14 @@ fi
 gtk-update-icon-cache -f -t %{_datadir}/icons/hicolor 2>/dev/null || :
 update-desktop-database %{_datadir}/applications 2>/dev/null || :
 chmod +x %{_bindir}/claude 2>/dev/null || :
-# Set chrome-sandbox setuid for Electron sandbox
-for p in /usr/lib64/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox \
-         "$(dirname "$(command -v electron 2>/dev/null)")/../lib/node_modules/electron/dist/chrome-sandbox"; do
-  if [ -f "$p" ]; then chown root:root "$p" && chmod 4755 "$p"; break; fi
-done || :
+# The bundled Electron ships its own chrome-sandbox. It is only used when the
+# app runs WITHOUT bubblewrap (CLAUDE_NO_SANDBOX=1 or bwrap missing); the
+# default sandboxed launch passes --no-sandbox. Set it setuid-root for that
+# fallback path.
+if [ -f /usr/lib64/claude-desktop-hardened/chrome-sandbox ]; then
+  chown root:root /usr/lib64/claude-desktop-hardened/chrome-sandbox 2>/dev/null || :
+  chmod 4755 /usr/lib64/claude-desktop-hardened/chrome-sandbox 2>/dev/null || :
+fi
 echo ""
 echo "Claude Desktop Hardened installed."
 echo "To enable Computer Use: sudo dnf install claude-desktop-hardened-computeruse"
