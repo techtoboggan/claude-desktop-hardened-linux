@@ -1,21 +1,22 @@
 ***This is an unofficial, community-maintained project. It is not affiliated with or endorsed by Anthropic.***
 
-This project repackages the official Claude Desktop release for Linux with additional security hardening (bubblewrap sandboxing, credential redaction, permission-gated Computer Use). Anthropic does not provide support for this build — if you run into an issue, [open an issue on our tracker](https://github.com/techtoboggan/claude-desktop-hardened-linux/issues), not Anthropic's.
+This project repackages **Anthropic's official Claude Desktop Linux build** (`.deb`) with a security-hardening layer — **enforced [bubblewrap](https://github.com/containers/bubblewrap) sandboxing** plus supply-chain hardening — and ships it for **Fedora/RHEL and Arch** (which the official build doesn't cover), as well as a hardened `.deb`. Anthropic does not support this build — [open an issue on our tracker](https://github.com/techtoboggan/claude-desktop-hardened-linux/issues), not Anthropic's.
 
 # Claude Desktop for Linux (Hardened)
 
-A security-focused Linux build of Claude Desktop. Downloads the official release, applies bubblewrap sandboxing, credential redaction, and permission-gated Computer Use — then packages it for Fedora, Debian/Ubuntu, and Arch Linux.
+The official Anthropic Claude Desktop Linux app, **wrapped in a bubblewrap sandbox** and repackaged for more distros. The application payload is Anthropic's official Linux build, **unmodified** — we don't patch `app.asar` or inject code. Our contribution is the security wrapper and the packaging.
 
-## Features
+> **Base change (July 2026):** Anthropic now publishes an official Claude Desktop Linux `.deb`. This project switched from porting the Windows build to **repackaging that official Linux build**. See [How it works](#how-it-works).
 
-- **Cowork / Local Agent Mode** — sandboxed via [bubblewrap](https://github.com/containers/bubblewrap) with default-deny filesystem, resource limits, credential redaction, and environment allowlisting
-- **Computer Use** — screenshot, click, type, and scroll automation for both X11 and Wayland, gated by a per-session permission dialog (no auto-grant)
-- **MCP** (Model Context Protocol) — configure servers in `~/.config/Claude/claude_desktop_config.json`
-- **Ctrl+Alt+Space** quick entry popup
-- **System tray** with auto-inverted icons for dark themes
-- **Native Wayland support** — auto-detected, with proper taskbar pinning, window grouping, and Ozone platform hints
-- **Bundled Claude Code CLI** — `claude` command available system-wide after install
-- **Diagnostic tool** — `claude-desktop-hardened --doctor` checks your system for missing dependencies and misconfigurations
+## What we add
+
+- **Enforced sandboxing** — the app runs inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace with a read-only system, a `$HOME` reduced to a tmpfs that exposes only Claude's own config/cache (your documents, keys, and other apps' data are not visible), and devices limited to GPU/KVM/sound. Escape hatch: `CLAUDE_NO_SANDBOX=1`.
+- **Fedora/RHEL + Arch packaging** — the official build is Debian/Ubuntu-only; we cover the RPM and Arch worlds (plus a hardened `.deb`).
+- **Supply-chain hardening** — the official `.deb` is pinned by SHA256, releases ship an SBOM (CycloneDX) and GPG-signed `SHA256SUMS`, all CI actions are SHA-pinned, and sources are scanned for trojan-source/malware.
+- **Bundled Claude Code CLI** — the `claude` command, available system-wide after install.
+- **Diagnostics** — `claude-desktop-hardened --doctor`.
+
+Everything the app itself does (Chat, Cowork, Code, MCP, Wayland support, tray) comes from Anthropic's official build. Features that were previously *injected* by this project when it ported the Windows build (in-app custom-backend chip, our own Computer Use permission UI, credential-redaction stubs) were **removed** in the July 2026 rebase — the official Linux app provides its own implementations.
 
 ---
 
@@ -445,8 +446,8 @@ The `chrome-sandbox` binary is set to `4755 root:root` (setuid) during post-inst
 
 Two files control all external dependency versions:
 
-- **`CLAUDE_VERSION`** — pins the exact Claude Desktop release (version + SHA256 of the nupkg)
-- **`TOOL_VERSIONS`** — pins Electron, asar, cdxgen, Claude CLI, vet, and container image digests
+- **`CLAUDE_VERSION`** — pins the exact official Claude Desktop Linux release (version + SHA256 of the official `.deb`)
+- **`TOOL_VERSIONS`** — pins the Claude CLI, cdxgen, vet, and container image digests
 
 All GitHub Actions are pinned to full commit SHAs. Container images are pinned to SHA256 digests. npm packages are installed with `--ignore-scripts`.
 
@@ -454,20 +455,19 @@ All GitHub Actions are pinned to full commit SHAs. Container images are pinned t
 
 Every push and PR runs:
 
-- **Unit tests** — credential classifier (19 tests), path safety (9 tests), patch system (19 tests), doctor integration (7 tests)
-- **Package smoke tests** — verifies each built package contains expected files, correct permissions, valid desktop entry, and reasonable size
-- **Source integrity** — trojan source / Unicode attack scanning on all JS, shell, and Python files
+- **Shell lint** — `bash -n` on the build pipeline and generated launcher; doctor integration test
+- **Package smoke tests** — verifies each built package contains the official payload (`app.asar`, bundled Electron, chrome-sandbox), the launcher, correct permissions, valid desktop entry, and reasonable size
+- **Source integrity** — trojan source / Unicode attack scanning on all shell files
 - **Dependency scanning** — OWASP depscan for vulnerabilities, vet for malware
-- **Post-patch validation** — `node --check` verifies patched JS is syntactically valid
 - **SBOM** — CycloneDX bill of materials attached to every release
 
 ### Automated updates
 
-A CI workflow checks for new Claude Desktop releases daily. When a new version is found, it:
+A CI workflow polls Anthropic's official Linux apt index. When a new version is found, it:
 
-1. Downloads the new nupkg and computes its SHA256
-2. Test-builds an RPM in a Fedora container to verify patches apply cleanly
-3. Validates the patched JS with `node --check`
+1. Reads the new version and its `.deb` SHA256 straight from the signed `Packages` index
+2. Test-builds an RPM in a Fedora container to verify the repackage + build succeed
+3. Confirms the official payload (`app.asar`) is present in the built package
 4. If everything passes, pushes the version bump to `main` (which triggers the release pipeline)
 5. If the build fails, opens a GitHub issue with diagnostics and the build log
 
@@ -545,36 +545,30 @@ These contain a log of all Computer Use actions, session lifecycle events, and r
 
 ## How it works
 
-Claude Desktop ships as a Windows `.exe` installer containing an Electron app. The build script:
+Anthropic ships an official Claude Desktop Linux `.deb` (a native Linux Electron app that bundles its own Electron runtime and native module). The build script:
 
-1. **Downloads** the pinned nupkg (version + SHA256 verified from `CLAUDE_VERSION`)
-2. **Extracts icons** from the Windows exe (16px through 256px)
-3. **Replaces native modules** — swaps Windows/macOS native addons with Linux stubs for keyboard constants, platform detection, and Cowork session management
-4. **Installs Cowork stubs** — a process orchestrator for spawning sandboxed Claude Code CLI sessions with credential redaction, file watching, session persistence, and IPC handling
-5. **Installs Computer Use modules** — display-server-aware screenshot, window listing, and input automation with a permission dialog layer
-6. **Patches platform gating** — modular patches in `patches/` surgically modify 8 locations in the minified JS to accept Linux as a supported platform
-7. **Patches window decorations** — switches from macOS `hiddenInset` to Electron CSD with transparent title bar overlay
-8. **Injects startup code** — sets the window icon, fixes the system tray, sets Wayland `app_id`, and registers permission-gated Computer Use handlers
-9. **Inverts tray icons** for dark Linux system trays
-10. **Bundles Claude Code CLI** from npm (pinned version, `--ignore-scripts`)
-11. **Packages** as RPM, DEB, or Arch with post-install hooks for icon caches, desktop database updates, and chrome-sandbox setuid
+1. **Downloads** the official `.deb` from Anthropic's apt repo and verifies it against the SHA256 pinned in `CLAUDE_VERSION` (`lib/download.sh`)
+2. **Extracts** the `.deb` payload (`dpkg-deb -x`) — the app under `usr/lib/claude-desktop/`
+3. **Stages the payload verbatim** — no `app.asar` patching, no code injection, no native stubs; the official Linux build already works on Linux
+4. **Reuses the official icons**, renamed to our app id
+5. **Bundles the Claude Code CLI** from npm (pinned, `--ignore-scripts`) for the `claude` command
+6. **Generates the hardened launcher** — a bubblewrap wrapper around the official binary (see below)
+7. **Packages** as RPM, DEB, or Arch, with post-install hooks for icon caches, desktop database, and chrome-sandbox setuid (used only on the non-sandboxed fallback path)
 
-### Patch architecture
+### The sandbox layer
 
-Platform patches are modular — each lives in its own file under `patches/`:
+The launcher (`/usr/bin/claude-desktop-hardened`) runs Anthropic's binary inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace:
 
-| Patch | Purpose |
-|-------|---------|
-| `patch_platform_gating.py` | Accept Linux in platform check functions |
-| `patch_vm_manifest.py` | Add Linux entries to VM image manifest |
-| `patch_platform_constants.py` | Include Linux in `isSupportedPlatform` |
-| `patch_enterprise_config.py` | Ensure VM features aren't forced off |
-| `patch_api_headers.py` | Spoof platform headers for feature checks |
-| `patch_binary_manager.py` | Add Linux to `getHostPlatform()` |
-| `patch_binary_resolution.py` | Find system-installed Claude CLI |
-| `inject_cowork_init.py` | Wire up Cowork lifecycle hooks |
+- **read-only system** (`/usr`, `/etc`, `/sys`)
+- **`$HOME` is a fresh tmpfs** exposing only `~/.config/Claude`, `~/.claude`, and `~/.cache/claude-desktop` (rw) plus common theming dirs (ro) — the rest of your home, SSH keys, other apps' data are invisible to the app
+- **devices limited** to GPU (`/dev/dri`), KVM (`/dev/kvm`), and sound (`/dev/snd`)
+- Electron's own sandbox is disabled inside bwrap (`--no-sandbox`) because bwrap already provides the namespace isolation
 
-This makes version bumps easier — when upstream renames minified symbols, you update one file instead of a monolithic script.
+Escape hatch: set `CLAUDE_NO_SANDBOX=1` to launch directly; if `bwrap` isn't installed the launcher falls back to a direct launch with a warning.
+
+### Why the base changed (July 2026)
+
+This project used to download the **Windows `.nupkg`** and force it to run on Linux, which required patching dozens of locations in the minified `app.asar` and stubbing out Windows/macOS native modules. That was fragile — every upstream release could break a patch (missing registry APIs, Windows-only tray icons, etc.). Once Anthropic shipped an **official Linux build**, that entire class of breakage disappeared: we now repackage the real Linux app unmodified and focus purely on the sandbox + supply-chain hardening.
 
 ### Package metadata
 

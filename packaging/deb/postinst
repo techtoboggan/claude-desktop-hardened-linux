@@ -9,26 +9,15 @@ update-desktop-database /usr/share/applications 2>/dev/null || true
 # Ensure Claude Code CLI wrapper is executable
 chmod +x /usr/bin/claude 2>/dev/null || true
 
-# Set correct permissions for chrome-sandbox
-SANDBOX_PATHS=(
-    "/usr/lib/claude-desktop-hardened/app.asar.unpacked/node_modules/electron/dist/chrome-sandbox"
-)
-
-# Also check system electron
-if command -v electron >/dev/null 2>&1; then
-    ELECTRON_PATH=$(command -v electron)
-    POTENTIAL="$(dirname "$(dirname "$ELECTRON_PATH")")/lib/node_modules/electron/dist/chrome-sandbox"
-    SANDBOX_PATHS+=("$POTENTIAL")
+# The bundled Electron ships its own chrome-sandbox. It is only used on the
+# non-bubblewrap fallback path (CLAUDE_NO_SANDBOX=1 or bwrap missing); the
+# default sandboxed launch passes --no-sandbox. Set it setuid-root for that case.
+SANDBOX_PATH="/usr/lib/claude-desktop-hardened/chrome-sandbox"
+if [ -f "$SANDBOX_PATH" ]; then
+    echo "Setting chrome-sandbox permissions: $SANDBOX_PATH"
+    chown root:root "$SANDBOX_PATH" 2>/dev/null || true
+    chmod 4755 "$SANDBOX_PATH" 2>/dev/null || true
 fi
-
-for SANDBOX_PATH in "${SANDBOX_PATHS[@]}"; do
-    if [ -f "$SANDBOX_PATH" ]; then
-        echo "Setting chrome-sandbox permissions: $SANDBOX_PATH"
-        chown root:root "$SANDBOX_PATH" 2>/dev/null || true
-        chmod 4755 "$SANDBOX_PATH" 2>/dev/null || true
-        break
-    fi
-done
 
 echo ""
 echo "Claude Desktop Hardened installed."
