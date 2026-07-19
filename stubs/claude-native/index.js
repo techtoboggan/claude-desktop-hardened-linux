@@ -10,6 +10,7 @@
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
 // Keyboard key codes (matching the Windows native module's enum values)
 const KeyboardKey = {
@@ -91,6 +92,30 @@ function translateKey(k) {
   return k;
 }
 
+// ---------------------------------------------------------------------------
+// Safe-filesystem containment (openat-style)
+// ---------------------------------------------------------------------------
+// Upstream's native module grew a path-traversal-safe FS API: openRootDir()
+// returns an opaque "root" handle, and the *Beneath() ops resolve arrays of
+// path segments against that root, refusing to escape it. The app calls these
+// during load and for session/config storage. Without them the app throws
+// "openRootDir is not a function" (surfaced as UnsafeRootError / ERR_SAFE_FS_ROOT).
+//
+// We implement it with Node's fs + a containment check. The handle is opaque to
+// callers, so we represent it as { rootPath }.
+function _resolveBeneath(root, segments) {
+  const base = typeof root === 'string' ? root : (root && root.rootPath);
+  if (!base) throw new Error('Invalid safe-fs root handle');
+  const target = path.resolve(base, ...segments.map(String));
+  const rel = path.relative(base, target);
+  if (rel !== '' && (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel))) {
+    const e = new Error(`Path escapes safe root: ${segments.join('/')}`);
+    e.code = 'ERR_SAFE_FS_ESCAPE';
+    throw e;
+  }
+  return target;
+}
+
 module.exports = {
   // Keyboard constants
   KeyboardKey,
@@ -99,6 +124,50 @@ module.exports = {
   getWindowsVersion: () => '10.0.0',
   getPlatform: () => 'linux',
   getArch: () => process.arch,
+
+  // -------------------------------------------------------------------------
+  // Windows registry APIs — used by upstream for enterprise/MDM policy lookups
+  // (SOFTWARE\Policies\Claude) at startup. No registry on Linux, so report no
+  // policies and no-op writes/deletes. The read call is NOT platform-gated and
+  // is only null-guarded (not method-guarded) upstream, so a missing
+  // readRegistryValues throws during load and the app never starts.
+  readRegistryValues: () => [],
+  writeRegistryValue: () => {},
+  deleteRegistryKey: () => {},
+
+  // Windows UAC elevation type — N/A on Linux. Optional-chained by upstream but
+  // (again) not method-guarded, so it must exist. "default" = not elevated.
+  getWindowsElevationType: () => 'default',
+
+  // Native window stacking/focus — on Linux this is handled by our
+  // compositor-activation code (see lib/prepare.sh). No-op here.
+  moveWindowBehind: () => {},
+  focusWindow: () => {},
+
+  // -------------------------------------------------------------------------
+  // Safe-filesystem containment API (see _resolveBeneath above). Handles are
+  // opaque { rootPath } objects; *Beneath() take (root, [segments], ...).
+  async openRootDir(dir) {
+    const real = await fs.promises.realpath(dir);
+    const st = await fs.promises.stat(real);
+    if (!st.isDirectory()) throw new Error(`Root is not a directory: ${real}`);
+    return { rootPath: real };
+  },
+  async openBeneath(root, segments, flags, mode) {
+    return fs.promises.open(_resolveBeneath(root, segments), flags, mode ?? 0o600);
+  },
+  async mkdirBeneath(root, segments, opts) {
+    return fs.promises.mkdir(_resolveBeneath(root, segments), opts);
+  },
+  async renameBeneath(root, fromSegments, toSegments) {
+    return fs.promises.rename(
+      _resolveBeneath(root, fromSegments),
+      _resolveBeneath(root, toSegments),
+    );
+  },
+  async unlinkBeneath(root, segments) {
+    return fs.promises.unlink(_resolveBeneath(root, segments));
+  },
 
   // Window effects — no-op on Linux (these are Windows DWM-specific)
   setWindowEffect: () => {},
