@@ -358,9 +358,14 @@ jobs:
   # ---------------------------------------------------------------------------
   # Publish APT repository to GitHub Pages
   # ---------------------------------------------------------------------------
+  # RETIRED (2026-07 rebase): the official Linux .deb bundles Electron, so our
+  # repackaged .deb is ~187MB — over GitHub's 100MB git file limit, which the
+  # gh-pages-hosted apt pool cannot store. Debian/Ubuntu users should install
+  # the hardened .deb directly from the GitHub Release (dpkg -i), or use
+  # Anthropic's official apt repo for the plain (unhardened) app.
   publish-apt:
     needs: [check-version, release]
-    if: needs.check-version.outputs.should_release == 'true'
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
