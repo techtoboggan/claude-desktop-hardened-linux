@@ -86,11 +86,22 @@ SWIFTPKG
     log_step "🔧" "Patching for Cowork enablement..."
     python3 "$SCRIPT_DIR/enable-cowork.py" app.asar.contents
 
-    # Tray icons — invert RGB to white for dark Linux system trays
+    # Tray icons.
     mkdir -p app.asar.contents/resources
     cp ../lib/net45/resources/Tray* app.asar.contents/resources/ 2>/dev/null || true
+    # Upstream now ships purpose-built Linux tray icons — TrayIconLinux.png
+    # (dark glyph for light trays) and TrayIconLinux-Dark.png (light glyph for
+    # dark trays), selected at runtime by nativeTheme.shouldUseDarkColors. These
+    # are ALREADY correctly colored, so they must NOT be inverted: negating
+    # TrayIconLinux-Dark.png turns the light glyph black → invisible on a dark
+    # tray (the "no systray" bug). We only invert the legacy macOS *template*
+    # icons (TrayIconTemplate*), which are monochrome-black and would otherwise
+    # be invisible on dark trays IF a fallback path ever uses them on Linux.
     for tray_src in app.asar.contents/resources/Tray*.png; do
         [ -f "$tray_src" ] || continue
+        case "$(basename "$tray_src")" in
+            TrayIconLinux*) continue ;;  # upstream-provided, already correct
+        esac
         convert "$tray_src" -channel RGB -negate "$tray_src" 2>/dev/null && \
             log_info "Tray icon → white: $(basename "$tray_src")" || true
     done
