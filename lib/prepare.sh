@@ -232,9 +232,13 @@ USER_ARGS=("\$@")
 mkdir -p "\$CFG/Claude" "\$CACHE/claude-desktop" "\$HOME/.claude" 2>/dev/null || true
 
 # --- bubblewrap profile ---------------------------------------------------
-# System is read-only; \$HOME is a fresh tmpfs exposing only Claude's own dirs
-# (rw) plus common theming dirs (ro) so the UI renders correctly. Devices are
-# limited to GPU / KVM / sound / input. Network is shared (the app needs it).
+# Claude Desktop is an agentic app: Cowork/Code sessions and MCP servers must
+# be able to run your tools and work with your files. So the profile is
+# DEFAULT-ALLOW \$HOME, but MASKS credential/secret locations with empty tmpfs
+# (ssh, gnupg, cloud creds, browser profiles, keyrings). System is read-only,
+# devices are limited to GPU/KVM/sound, and PID/UTS/cgroup namespaces isolate
+# the app. Network is shared (the app needs it). This protects your secrets and
+# the system from a compromised renderer/MCP without breaking the tool.
 BWRAP_OPTS=(
     --die-with-parent
     --unshare-user-try --unshare-pid --unshare-uts --unshare-cgroup-try
@@ -254,21 +258,25 @@ BWRAP_OPTS=(
     --dev-bind-try /dev/snd /dev/snd
     --dev-bind-try /dev/uinput /dev/uinput
     --tmpfs /tmp
-    --tmpfs "\$HOME"
+    --bind "\$HOME" "\$HOME"
     --bind-try "\$XRD" "\$XRD"
     --ro-bind-try /run/dbus /run/dbus
-    --bind-try "\$CFG/Claude" "\$CFG/Claude"
-    --bind-try "\$HOME/.claude" "\$HOME/.claude"
-    --bind-try "\$CACHE/claude-desktop" "\$CACHE/claude-desktop"
-    --ro-bind-try "\$CFG/fontconfig" "\$CFG/fontconfig"
-    --ro-bind-try "\$CFG/gtk-3.0" "\$CFG/gtk-3.0"
-    --ro-bind-try "\$CFG/gtk-4.0" "\$CFG/gtk-4.0"
-    --ro-bind-try "\$CFG/dconf" "\$CFG/dconf"
-    --ro-bind-try "\$HOME/.local/share/fonts" "\$HOME/.local/share/fonts"
-    --ro-bind-try "\$HOME/.fonts" "\$HOME/.fonts"
-    --ro-bind-try "\$HOME/.icons" "\$HOME/.icons"
-    --ro-bind-try "\$HOME/.themes" "\$HOME/.themes"
     --setenv HOME "\$HOME"
+    # Mask credential/secret locations (empty tmpfs overlays the real dirs).
+    --tmpfs "\$HOME/.ssh"
+    --tmpfs "\$HOME/.gnupg"
+    --tmpfs "\$HOME/.aws"
+    --tmpfs "\$HOME/.azure"
+    --tmpfs "\$HOME/.config/gcloud"
+    --tmpfs "\$HOME/.kube"
+    --tmpfs "\$HOME/.docker"
+    --tmpfs "\$HOME/.pki"
+    --tmpfs "\$HOME/.local/share/keyrings"
+    --tmpfs "\$HOME/.mozilla"
+    --tmpfs "\$HOME/.config/google-chrome"
+    --tmpfs "\$HOME/.config/chromium"
+    --tmpfs "\$HOME/.config/BraveSoftware"
+    --tmpfs "\$HOME/.config/Slack"
 )
 
 # bwrap runs the app; --no-sandbox disables Electron's own (nested) sandbox
