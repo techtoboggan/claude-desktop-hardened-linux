@@ -10,7 +10,7 @@ The official Anthropic Claude Desktop Linux app, **wrapped in a bubblewrap sandb
 
 ## What we add
 
-- **Enforced sandboxing** — the app runs inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace with a read-only system, a `$HOME` reduced to a tmpfs that exposes only Claude's own config/cache (your documents, keys, and other apps' data are not visible), and devices limited to GPU/KVM/sound. Escape hatch: `CLAUDE_NO_SANDBOX=1`.
+- **Enforced sandboxing** — the app runs inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace: read-only system, device access limited to GPU/KVM/sound, and PID/UTS/cgroup isolation. Because Claude is agentic (Cowork/Code sessions and MCP servers need your files and tools), `$HOME` is **default-allow but with credential/secret locations masked** — `~/.ssh`, `~/.gnupg`, cloud creds (`~/.aws`, `~/.config/gcloud`, `~/.kube`, …), browser profiles, and keyrings are replaced with empty tmpfs, so a compromised renderer or MCP server can't read your secrets or modify the system, while your projects still work. Escape hatch: `CLAUDE_NO_SANDBOX=1`.
 - **Fedora/RHEL + Arch packaging** — the official build is Debian/Ubuntu-only; we cover the RPM and Arch worlds (plus a hardened `.deb`).
 - **Supply-chain hardening** — the official `.deb` is pinned by SHA256, releases ship an SBOM (CycloneDX) and GPG-signed `SHA256SUMS`, all CI actions are SHA-pinned, and sources are scanned for trojan-source/malware.
 - **Bundled Claude Code CLI** — the `claude` command, available system-wide after install.
@@ -560,8 +560,9 @@ Anthropic ships an official Claude Desktop Linux `.deb` (a native Linux Electron
 The launcher (`/usr/bin/claude-desktop-hardened`) runs Anthropic's binary inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace:
 
 - **read-only system** (`/usr`, `/etc`, `/sys`)
-- **`$HOME` is a fresh tmpfs** exposing only `~/.config/Claude`, `~/.claude`, and `~/.cache/claude-desktop` (rw) plus common theming dirs (ro) — the rest of your home, SSH keys, other apps' data are invisible to the app
+- **`$HOME` is default-allow, secrets masked** — the app (and the MCP servers / Cowork / Code sessions it spawns) can work with your files and tools, but `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.kube`, `~/.docker`, `~/.pki`, `~/.local/share/keyrings`, and browser profiles are overlaid with empty tmpfs — invisible to the app
 - **devices limited** to GPU (`/dev/dri`), KVM (`/dev/kvm`), and sound (`/dev/snd`)
+- **DNS** works inside the sandbox (the resolv.conf target dir is bound)
 - Electron's own sandbox is disabled inside bwrap (`--no-sandbox`) because bwrap already provides the namespace isolation
 
 Escape hatch: set `CLAUDE_NO_SANDBOX=1` to launch directly; if `bwrap` isn't installed the launcher falls back to a direct launch with a warning.
