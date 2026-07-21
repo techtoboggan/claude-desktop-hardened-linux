@@ -228,20 +228,33 @@ fi
 # Preserve the user's arguments (e.g. a claude:// URL) before we build opts.
 USER_ARGS=("\$@")
 
+# Shared /tmp for all Claude instances. Electron/Chromium put the single-instance
+# SingletonSocket under /tmp; if /tmp were a private tmpfs per sandbox, the
+# OAuth-callback instance couldn't reach the running instance's socket and would
+# launch a second app (+ second tray). A per-user dir bound to /tmp keeps
+# instances talking to each other without exposing the host's /tmp.
+CDH_TMP="\$CACHE/claude-desktop/tmp"
+
 # Ensure the app's own writable dirs exist before binding them in.
-mkdir -p "\$CFG/Claude" "\$CACHE/claude-desktop" "\$HOME/.claude" 2>/dev/null || true
+mkdir -p "\$CFG/Claude" "\$CACHE/claude-desktop" "\$CDH_TMP" "\$HOME/.claude" 2>/dev/null || true
 
 # --- bubblewrap profile ---------------------------------------------------
 # Claude Desktop is an agentic app: Cowork/Code sessions and MCP servers must
 # be able to run your tools and work with your files. So the profile is
 # DEFAULT-ALLOW \$HOME, but MASKS credential/secret locations with empty tmpfs
 # (ssh, gnupg, cloud creds, browser profiles, keyrings). System is read-only,
-# devices are limited to GPU/KVM/sound, and PID/UTS/cgroup namespaces isolate
-# the app. Network is shared (the app needs it). This protects your secrets and
-# the system from a compromised renderer/MCP without breaking the tool.
+# devices are limited to GPU/KVM/sound, and user/cgroup namespaces isolate the
+# app. Network is shared (the app needs it). This protects your secrets and the
+# system from a compromised renderer/MCP without breaking the tool.
+#
+# NOTE: we deliberately DON'T --unshare-pid or --unshare-uts. Electron's
+# single-instance lock records "<hostname>-<pid>"; a private PID namespace makes
+# every instance PID 2, and a private UTS namespace changes the hostname — both
+# break single-instance forwarding, so the OAuth claude:// callback would spawn
+# a second app instead of returning to the running one.
 BWRAP_OPTS=(
     --die-with-parent
-    --unshare-user-try --unshare-pid --unshare-uts --unshare-cgroup-try
+    --unshare-user-try --unshare-cgroup-try
     --new-session
     --share-net
     --ro-bind /usr /usr
@@ -257,7 +270,8 @@ BWRAP_OPTS=(
     --dev-bind-try /dev/kvm /dev/kvm
     --dev-bind-try /dev/snd /dev/snd
     --dev-bind-try /dev/uinput /dev/uinput
-    --tmpfs /tmp
+    --bind "\$CDH_TMP" /tmp
+    --ro-bind-try /tmp/.X11-unix /tmp/.X11-unix
     --bind "\$HOME" "\$HOME"
     --bind-try "\$XRD" "\$XRD"
     --ro-bind-try /run/dbus /run/dbus
