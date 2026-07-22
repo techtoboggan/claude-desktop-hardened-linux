@@ -2,8 +2,6 @@
 # Update these when upgrading dependencies.
 # Format: NAME=VERSION (one per line, comments start with #)
 
-ELECTRON_VERSION=41.0.3
-ASAR_VERSION=3.2.0
 CDXGEN_VERSION=11.11.0
 CLAUDE_CLI_VERSION=2.1.89
 VET_VERSION=v1.8.8
