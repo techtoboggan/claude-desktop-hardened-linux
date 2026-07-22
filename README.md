@@ -47,14 +47,15 @@ cd claude-desktop-hardened-bin
 makepkg -si
 ```
 
-### Debian / Ubuntu (APT)
+### Debian / Ubuntu (`.deb`)
+
+Download the hardened `.deb` from [Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) and install it directly:
 
 ```bash
-curl -fsSL https://techtoboggan.github.io/claude-desktop-hardened-linux/pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/claude-desktop-hardened.gpg
-echo "deb [signed-by=/usr/share/keyrings/claude-desktop-hardened.gpg] https://techtoboggan.github.io/claude-desktop-hardened-linux stable main" | sudo tee /etc/apt/sources.list.d/claude-desktop-hardened.list
-sudo apt update
-sudo apt install claude-desktop-hardened
+sudo dpkg -i claude-desktop-hardened_*.deb && sudo apt-get install -f
 ```
+
+> We no longer publish an APT repository. The official Linux `.deb` bundles Electron, so the repackaged hardened `.deb` (~187 MB) exceeds the file-size limit of the GitHub Pages–hosted apt pool. Install the release `.deb` directly (above), or use [Anthropic's official apt repo](https://claude.ai/download) for the plain, unhardened app.
 
 ### Quick install (any distro)
 
@@ -104,7 +105,7 @@ Requires Node.js 18-23, npm, and root/sudo access. Build dependencies are instal
 |--------|---------|---------|------|
 | RPM | Fedora 43/44 | `.rpm` | [COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop-hardened/) |
 | RPM | RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` | [GitHub Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) |
-| DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | [APT repo](https://techtoboggan.github.io/claude-desktop-hardened-linux) |
+| DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | [GitHub Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) |
 | Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` | [AUR](https://aur.archlinux.org/packages/claude-desktop-hardened-bin) |
 
 x86_64 only.
@@ -478,7 +479,7 @@ When `CLAUDE_VERSION` changes on `main`, the release workflow:
 1. Builds RPM, DEB, and Arch packages in pinned containers
 2. Generates a CycloneDX SBOM
 3. Creates a GitHub Release with SHA256SUMS (GPG-signed if key is configured)
-4. Publishes to Fedora COPR, GitHub Pages APT repo, and AUR automatically
+4. Publishes to Fedora COPR and AUR automatically
 
 ---
 

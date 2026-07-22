@@ -262,7 +262,7 @@ jobs:
             - `SHA256SUMS` with GPG signature for integrity verification
             - All CI actions pinned to commit SHAs
             - Source scanned for trojan source attacks and malware
-            - nupkg SHA256 verified against pin in `CLAUDE_VERSION`
+            - official Linux `.deb` SHA256 verified against pin in `CLAUDE_VERSION`
           files: |
             artifacts/**/*.rpm
             artifacts/**/*.deb

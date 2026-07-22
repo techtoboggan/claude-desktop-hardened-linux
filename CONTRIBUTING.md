@@ -1,6 +1,6 @@
 # Contributing to Claude Desktop Hardened for Linux
 
-Thanks for your interest in contributing! This project repackages the official Claude Desktop for Linux with security hardening, so the contribution surface is primarily around the build system, patches, stubs, and packaging.
+Thanks for your interest in contributing! This project repackages Anthropic's **official** Claude Desktop for Linux `.deb` with a security-hardening layer. The application payload ships **unmodified** — we do not patch `app.asar` or inject code. The contribution surface is therefore the **bubblewrap sandbox wrapper**, the **build/packaging system**, and **supply-chain hardening**.
 
 ## Getting started
 
@@ -19,19 +19,11 @@ cd claude-desktop-hardened-linux
 sudo FORMAT=rpm ./build.sh   # or deb, arch
 ```
 
+The build downloads the official Linux `.deb` (pinned by SHA256 in `CLAUDE_VERSION`), repackages it for the target distro with the sandbox launcher, and bundles the Claude Code CLI.
+
 ### Running tests
 
 ```bash
-# JavaScript unit tests (credential classifier, path safety, computer use, bwrap, session store)
-node tests/test_credential_classifier.js
-node tests/test_path_safety.js
-node tests/test_computer_use.js
-node tests/test_bwrap_command.js
-node tests/test_session_store.js
-
-# Patch system tests
-python3 tests/test_patches.py
-
 # Doctor integration tests
 bash tests/test_doctor.sh
 
@@ -39,67 +31,29 @@ bash tests/test_doctor.sh
 bash tests/test_package_contents.sh
 ```
 
-## How to update patches for a new upstream version
+## How to handle a new upstream version
 
-When Claude Desktop releases a new version, the minified JS may change — causing patches to fail. Here's how to fix them:
+Upstream version bumps are automated: the **Check Upstream Version** workflow detects a new official `.deb`, updates `CLAUDE_VERSION` (version + SHA256 pin), and the **Release** workflow builds and publishes. Because we repackage the official Linux build unmodified, upstream changes rarely break the build — there are no minified-JS patches to keep in sync anymore.
 
-1. The CI will open an issue titled "Build failure: Claude Desktop X.Y.Z" with diagnostics
-2. Download the new nupkg and extract it (the build script does this automatically)
-3. Look at the build log to see which patch(es) failed
-4. Each patch in `patches/` targets specific patterns in the minified JS — update the regex or string match to find the new symbol names
-5. Test your fix:
-   ```bash
-   # Quick validation that patches apply and produce valid JS
-   sudo FORMAT=rpm ./build.sh 2>&1 | grep -E '\[OK\]|\[FAIL\]'
-   ```
-6. Run `node --check` on the patched `index.js` to verify syntax
-7. Open a PR with the patch update
+If a build *does* fail after a bump:
 
-### Patch architecture
+1. CI opens an issue titled "Build failure: Claude Desktop X.Y.Z" with diagnostics
+2. Reproduce locally with `sudo FORMAT=rpm ./build.sh`
+3. The failure is almost always in packaging (`lib/package-*.sh`, `packaging/`) or the sandbox launcher — not in the app payload
+4. Open a PR with the fix
 
-Each patch file in `patches/` is a self-contained Python script that modifies one aspect of the minified JS:
+## Sandbox wrapper
 
-| Patch | What it does |
-|-------|-------------|
-| `patch_platform_gating.py` | Accept Linux in platform check functions |
-| `patch_vm_manifest.py` | Add Linux entries to VM image manifest |
-| `patch_platform_constants.py` | Include Linux in `isSupportedPlatform` |
-| `patch_enterprise_config.py` | Ensure VM features aren't forced off |
-| `patch_api_headers.py` | Spoof platform headers for feature checks |
-| `patch_binary_manager.py` | Add Linux to `getHostPlatform()` |
-| `patch_binary_resolution.py` | Find system-installed Claude CLI |
-| `inject_cowork_init.py` | Wire up Cowork lifecycle hooks |
+The hardening is a [bubblewrap](https://github.com/containers/bubblewrap) launcher that runs the official app inside a namespace: read-only system, restricted device access, PID/UTS/cgroup isolation, and `$HOME` default-allow with credential/secret locations masked (`~/.ssh`, `~/.gnupg`, cloud creds, browser profiles, keyrings). Escape hatch: `CLAUDE_NO_SANDBOX=1`.
 
-Patches are applied in order by `lib/patch.sh`. Each patch validates its own success and prints `[OK]` or `[FAIL]`. After all patches run, `node --check` verifies the result is syntactically valid JS.
-
-## Cowork stubs
-
-The `stubs/cowork/` directory contains the session management layer:
-
-- `index.js` — main entry, session lifecycle
-- `session_orchestrator.js` — spawns sandboxed Claude Code CLI sessions
-- `credential_classifier.js` — regex-based credential redaction
-- `computer_use.js` — display-server-aware screenshot/click/type
-- `computer_use_permission.js` — native permission dialogs
-- `path_safety.js` — blocklist for sensitive directories
-
-When modifying stubs, run the corresponding test file to verify your changes.
-
-### Environment variable passthrough
-
-Env-var passthrough from the user's shell to Cowork-sandboxed Claude Code sessions is controlled by the `ENV_ALLOWLIST` `Set` at the top of `stubs/claude-swift-stub/index.js`. Anything not in that set gets stripped by `filterEnv()` before the CLI is spawned.
-
-If you're adding a new user-facing integration (a new model provider, a new upstream feature that reads an env var), you **must** add the relevant variable names to `ENV_ALLOWLIST` *and* mention them in the README's ["Using a custom model backend"](../README.md#using-a-custom-model-backend) section. A test at `tests/test_bwrap_command.js` parses the allowlist from source and asserts the `ANTHROPIC_*` SDK vars are present — extend that test when you add new required names, so the next upstream bump doesn't silently drop them.
-
-Do **not** add cloud credentials (`AWS_*`, `GOOGLE_*`, `AZURE_*`) to the default allowlist — those have broader scope than just the model backend. Document them as opt-in in the README's "Bedrock / Vertex" subsection instead.
+When changing sandbox behavior, verify the app still launches and that MCP servers / Cowork file access still work, then run `claude-desktop-hardened --doctor`.
 
 ## Pull request guidelines
 
 - Keep PRs focused — one concern per PR
-- Include test coverage for new functionality
-- Run the full test suite before submitting
-- If your change touches patches, verify the build completes and `node --check` passes
-- Security-sensitive changes should explain the threat model in the PR description
+- Include test coverage for new functionality where practical
+- Run the test suite and a local build before submitting
+- Security-sensitive changes (sandbox policy, supply-chain pins) should explain the threat model in the PR description
 
 ## Reporting security issues
 
