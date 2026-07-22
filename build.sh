@@ -75,7 +75,7 @@ source "$SCRIPT_DIR/lib/download.sh"
 download_and_extract
 
 # ---------------------------------------------------------------------------
-# Prepare (distro-agnostic: icons, stubs, patching, CLI, desktop entry)
+# Prepare (distro-agnostic: icons, sandbox launcher, CLI, desktop entry)
 # ---------------------------------------------------------------------------
 
 source "$SCRIPT_DIR/lib/prepare.sh"
