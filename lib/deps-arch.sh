@@ -17,7 +17,12 @@ install_deps() {
         if ! check_command "$cmd"; then
             case "$cmd" in
                 "curl")     DEPS_TO_INSTALL="$DEPS_TO_INSTALL curl" ;;
-                "npx")      DEPS_TO_INSTALL="$DEPS_TO_INSTALL nodejs npm" ;;
+                # Pin to the LTS Node (nodejs-lts-jod = 22.x), NOT the rolling
+                # `nodejs` package. Arch rolled `nodejs` to 26.x / `npm` to 12.x
+                # around 2026-08, which broke `npm install` of the bundled Claude
+                # Code CLI (build-arch failed while Fedora/Ubuntu, on older Node,
+                # passed). LTS keeps the build toolchain stable across Arch rolls.
+                "npx")      DEPS_TO_INSTALL="$DEPS_TO_INSTALL nodejs-lts-jod npm" ;;
                 "python3")  DEPS_TO_INSTALL="$DEPS_TO_INSTALL python" ;;
                 "dpkg-deb") DEPS_TO_INSTALL="$DEPS_TO_INSTALL dpkg" ;;
             esac
