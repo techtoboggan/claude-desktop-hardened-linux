@@ -71,11 +71,13 @@ prepare_app() {
         log_warn "Claude CLI version not pinned — using $CLAUDE_CLI_VERSION"
     fi
     echo "📋 Claude Code CLI: $CLAUDE_CLI_VERSION"
-    echo "   node $(node --version 2>/dev/null || echo '?'), npm $(npm --version 2>/dev/null || echo '?')"
+    echo "   node: $(command -v node || echo MISSING) / npm: $(command -v npm || echo MISSING)"
+    node --version || true
+    npm --version || true
     # Don't suppress npm's output — a silent `>/dev/null 2>&1` here previously
     # hid the real error when the Arch toolchain broke CLI bundling.
     if ! ( cd "$CLAUDE_CLI_DIR" \
-            && npm init -y >/dev/null 2>&1 \
+            && npm init -y \
             && npm install "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" --ignore-scripts ); then
         log_error "Failed to bundle Claude Code CLI (@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION})"
         exit 1

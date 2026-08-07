@@ -8,9 +8,15 @@
 install_deps() {
     echo "Checking build dependencies..."
 
-    # base-devel is required for makepkg (provides fakeroot, binutils, etc.)
-    echo "Installing base-devel group for makepkg..."
-    pacman -S --noconfirm --needed base-devel
+    # Arch is rolling, and this build runs inside a PINNED (older) base image.
+    # Installing current packages onto a stale image is a "partial upgrade",
+    # which Arch does not support: a freshly-installed Node binary is linked
+    # against the current glibc and won't execute on the old image's glibc
+    # (build-arch failed with node/npm present-but-unrunnable). Do a FULL
+    # system upgrade first so glibc + toolchain are consistent, THEN install.
+    # base-devel is required for makepkg (fakeroot, binutils, etc.).
+    echo "Full system upgrade + base-devel (avoids partial-upgrade breakage)..."
+    pacman -Syu --noconfirm --needed base-devel
 
     DEPS_TO_INSTALL=""
     for cmd in curl npx python3 dpkg-deb; do
