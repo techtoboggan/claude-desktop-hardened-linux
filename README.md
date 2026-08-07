@@ -33,19 +33,15 @@ sudo dnf install claude-desktop-hardened
 
 Updates automatically with `sudo dnf upgrade`.
 
-### Arch Linux (AUR)
+### Arch Linux (`.pkg.tar.zst`)
+
+Download the Arch package from [Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) and install it:
 
 ```bash
-yay -S claude-desktop-hardened-bin
+sudo pacman -U claude-desktop-hardened-*.pkg.tar.zst
 ```
 
-Or manually:
-
-```bash
-git clone https://aur.archlinux.org/claude-desktop-hardened-bin.git
-cd claude-desktop-hardened-bin
-makepkg -si
-```
+> **AUR temporarily unavailable.** The `claude-desktop-hardened-bin` AUR package was removed and auto-publishing is paused pending re-submission. Until it's back, install the `.pkg.tar.zst` from the release (above) or [build from source](#build-from-source).
 
 ### Debian / Ubuntu (`.deb`)
 
@@ -106,7 +102,7 @@ Requires Node.js 18-23, npm, and root/sudo access. Build dependencies are instal
 | RPM | Fedora 43/44 | `.rpm` | [COPR](https://copr.fedorainfracloud.org/coprs/techtoboggan/claude-desktop-hardened/) |
 | RPM | RHEL, CentOS, Rocky, AlmaLinux, Nobara | `.rpm` | [GitHub Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) |
 | DEB | Debian, Ubuntu, Pop!_OS, Linux Mint | `.deb` | [GitHub Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) |
-| Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` | [AUR](https://aur.archlinux.org/packages/claude-desktop-hardened-bin) |
+| Arch | Arch Linux, Manjaro, EndeavourOS, CachyOS | `.pkg.tar.zst` | [GitHub Releases](https://github.com/techtoboggan/claude-desktop-hardened-linux/releases) (AUR paused) |
 
 x86_64 only.
 
@@ -188,87 +184,13 @@ Configure MCP servers in `~/.config/Claude/claude_desktop_config.json`:
 
 ## Using a custom model backend
 
-Point Code / Cowork sessions at your own model backend — a local LLM via **LM Studio** or **Ollama**, a routing proxy like **LiteLLM** or **OpenRouter**, or a self-hosted **vLLM** server — instead of Anthropic's default endpoint.
+Point Code / Cowork (agent) sessions at your own model backend — a local LLM via **LM Studio** or **Ollama**, a routing proxy like **LiteLLM** or **OpenRouter**, or a self-hosted **vLLM** server — by setting standard Claude Code environment variables before launching. The hardened launcher passes your environment through to the app unchanged, so any `ANTHROPIC_*` variable you export is picked up by the sessions it spawns.
 
-> **Scope:** this override applies to **Code / Cowork (agent) mode only**. Conversation mode keeps using `claude.ai` because that UI is a hosted web app, not something we can redirect to a different frontend.
+> **Scope:** this applies to **Code / Cowork (agent) mode only**. Conversation mode uses `claude.ai` (a hosted web app) regardless.
 
-### Backend toggle in the title bar
+### Configure via environment variables
 
-There's a segmented chip in the top-left of the title bar (right next to the Claude icon) showing both backend options side-by-side. The active one is highlighted, the other is faded:
-
-```
-[ Anthropic | qwen35-4bit ]
-```
-
-- 🟢 **green** pill = local backend active
-- 🟡 **amber** pill = Anthropic (default) active
-- ⚫ **dim "Local (not set)"** = no local backend configured yet
-
-**Hover** for a native tooltip with the full URL, model, and source (shell env vs config file). **Click** either pill to switch — the new backend applies to the **next Code session you start**. Currently-running sessions keep their original env vars (we don't swap mid-conversation).
-
-**Real-time refresh:** changes from `--use-local` / `--toggle-backend` / direct JSON edits to `~/.config/Claude/custom-backend.json` update the chip in the running app immediately (we `fs.watch` the file).
-
-### Third-Party Inference setup (conversation mode too!) 🎉
-
-Recent Claude Desktop builds ship a **hidden third-party model provider setup window** — full OAuth + MCP integration that affects both conversation and Code modes. It's gated in the upstream Help menu behind a dev settings flag, but **our title bar chip bypasses the gate**: click the dim "Local (not set)" pill, or right-click either pill, to open the setup window directly.
-
-The setup window (900×720) is Anthropic's own UI for configuring custom inference providers. It handles:
-
-- **OAuth flow** for providers that require it (with HTTPS enforcement and encrypted token storage)
-- **Enterprise config** schema for BYOK deployments
-- **Custom HTTP headers** per provider
-- **MCP-based integration** so the app's normal tool + model pipeline routes through your provider
-
-This is **Anthropic-authored infrastructure** — no reverse engineering, just flipping a flag they already built. Unlike our env-var-only override (which only affects Code mode), configuring a provider here makes **conversation mode use your backend too**.
-
-> ⚠️ This is a hidden feature that Anthropic hasn't officially launched. No TODOs or "experimental" gates in the code, but treat it as unofficial: Anthropic could change the setup flow, config format, or remove the feature in a future release.
-
-**Alternative access paths:**
-
-```bash
-# Unlock the upstream menu item (Help → Configure Third-Party Inference…).
-# Requires app restart. Not needed if you use the chip — just a convenience
-# if you prefer the menu.
-claude-desktop-hardened --enable-third-party-setup
-```
-
-Or edit `~/.config/Claude/developer_settings.json` directly:
-
-```json
-{ "allowDevTools": true }
-```
-
-### Two ways to configure
-
-**1. CLI flags (quickest for trying it out):**
-
-```bash
-claude-desktop-hardened --model claude-sonnet-4-5-20250929 \
-                       --base-url http://localhost:4000
-```
-
-Flags are consumed by the launcher and forwarded as env vars to the Code CLI. They don't get passed to Electron.
-
-> **Tier mapping:** The `--model` flag also sets `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to the same value (unless you've explicitly set those env vars first). This is required because the UI's model picker spawns the CLI with `--model sonnet` (etc.), which would otherwise override your `ANTHROPIC_MODEL`. With tier aliasing, whichever tier you click in the UI resolves to your chosen backend model.
-
-> **Persistence:** `--model` and `--base-url` also write to `~/.config/Claude/custom-backend.json` so the title bar toggle remembers them. Run once with the flags, then toggle on/off from the UI going forward without needing the flags again.
-
-**Keyboard-shortcut-friendly CLI flags:**
-
-```bash
-claude-desktop-hardened --toggle-backend   # flip on/off (binds nicely to a shortcut)
-claude-desktop-hardened --use-local        # force local backend on
-claude-desktop-hardened --use-anthropic    # force Anthropic backend
-```
-
-These exit immediately after updating the config, so you can bind them in your WM / DE:
-
-```bash
-# Hyprland (~/.config/hypr/hyprland.conf)
-bind = SUPER SHIFT, L, exec, claude-desktop-hardened --toggle-backend
-```
-
-**2. Shell env vars (persistent — put in `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`):**
+Put these in `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish` so they're set whenever you launch:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:4000
@@ -276,11 +198,11 @@ export ANTHROPIC_AUTH_TOKEN=sk-your-backend-key
 export ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
 ```
 
-Env vars are the recommended path for daily use. Secrets (API keys, auth tokens) are deliberately **not** accepted as CLI flags — they'd leak into `ps aux` and shell history.
+Prefer environment variables over passing secrets on the command line — CLI args leak into `ps aux` and shell history.
 
 ### Provider recipes
 
-Each block shows the env var form. Swap `export FOO=bar` for `claude-desktop-hardened --foo bar` equivalents as needed.
+Export the variables, then launch `claude-desktop-hardened`.
 
 **LiteLLM proxy** — the most common multi-provider setup:
 
@@ -375,18 +297,22 @@ If any `ANTHROPIC_*` env var is set, `--doctor` shows a **Custom Model Backend**
 
 ### Troubleshooting
 
-- **"My CLI flag is ignored"** — make sure `--model` and `--base-url` come *before* any `--` separator or free args. Order: `claude-desktop-hardened --model X --base-url Y`.
 - **"Cowork session hangs on connect"** — run `--doctor`, confirm reachability. Check firewalls and whether your backend is listening on `0.0.0.0` (not just `127.0.0.1` if you're using a container).
 - **"TLS error"** — local proxies with self-signed certs will fail. Use plain `http://` for loopback, or install the self-signed cert into your system CA store.
 - **"Model name rejected"** — provider model-name formats differ: OpenRouter uses `vendor/model`, Ollama uses `name:tag`, LM Studio wants the exact loaded model's ID string from its server UI.
-- **"401 / 403 from backend"** — if you were logged in via OAuth before, `CLAUDE_CODE_OAUTH_TOKEN` may still be set and the CLI will try to use it against your custom backend. Run `unset CLAUDE_CODE_OAUTH_TOKEN` before launching, or include it in your shell rc file's custom-backend section. `--doctor` will warn when this conflict is detected.
-- **"UI shows Sonnet but my backend model is being used"** — that's expected. The `--model` flag aliases all three tiers (Opus/Sonnet/Haiku) to your model, so the UI picker is effectively cosmetic. Check the backend's access log to confirm traffic is going where you want.
+- **"401 / 403 from backend"** — if you were logged in via OAuth before, `CLAUDE_CODE_OAUTH_TOKEN` may still be set and the CLI will try to use it against your custom backend. Run `unset CLAUDE_CODE_OAUTH_TOKEN` before launching, or include it in your shell rc file alongside the other backend vars. `--doctor` warns when this conflict is detected.
 
-### Bedrock / Vertex / extra env vars (advanced)
+### Bedrock / Vertex (advanced)
 
-AWS Bedrock and Google Vertex aren't default-enabled because their required env vars (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) are cloud credentials with broader scope than just the model backend — we don't want them silently leaking into the sandbox unless you've explicitly said you want them there.
+AWS Bedrock and Google Vertex work through their standard Claude Code environment variables — export them before launching and the launcher passes them through:
 
-To opt in, edit the allowlist in `/usr/lib64/claude-desktop-hardened/stubs/claude-swift-stub/index.js` (or `/usr/lib/claude-desktop-hardened/...` on Debian). Add the vars you need to the `ENV_ALLOWLIST` Set. **Note:** the edit is reverted on package upgrade; for reproducibility, keep a post-install hook that re-applies your override, or open an issue if you'd like first-class support.
+```bash
+export CLAUDE_CODE_USE_BEDROCK=1      # or CLAUDE_CODE_USE_VERTEX=1
+export AWS_ACCESS_KEY_ID=…            # provider-specific credential vars
+export AWS_SECRET_ACCESS_KEY=…
+```
+
+> ⚠️ **Sandbox caveat:** the sandbox masks `~/.aws`, `~/.config/gcloud`, and `~/.azure` with empty tmpfs, so **file-based** cloud credentials in those directories are invisible to the app. Supply credentials via environment variables instead, or — if you must use the credential files — launch with `CLAUDE_NO_SANDBOX=1`.
 
 ---
 
@@ -394,46 +320,22 @@ To opt in, edit the allowlist in `/usr/lib64/claude-desktop-hardened/stubs/claud
 
 This project treats Claude's agentic capabilities as a security boundary. Every feature that touches the host system is sandboxed, logged, or gated behind user confirmation.
 
-### Cowork sandboxing
+### Sandboxing
 
-When Cowork spawns a Claude Code session, it runs inside a [bubblewrap](https://github.com/containers/bubblewrap) sandbox with a default-deny filesystem policy:
+The whole app — and every MCP server, Cowork, and Code session it spawns — runs inside a single [bubblewrap](https://github.com/containers/bubblewrap) namespace (details in [How it works → The sandbox layer](#the-sandbox-layer)):
 
-- **Minimal rootfs** — only `/usr`, `/lib`, `/lib64`, and select `/etc` files are mounted read-only. The agent cannot see your home directory, browser data, password managers, or other users' files.
-- **Writable mounts** limited to the working directory, session data, and `~/.config/Claude`
-- **Resource limits** via `systemd-run` — 4GB memory, 200% CPU (2 cores), 512 max tasks to prevent runaway processes and fork bombs
-- **`--die-with-parent`** ensures cleanup if the parent process exits
-- **Environment allowlisting** — only safe variables pass through (HOME, PATH, DISPLAY, XDG_*, plus standard `ANTHROPIC_*` SDK vars for [custom backends](#using-a-custom-model-backend)). Cloud credentials (`AWS_*`, `GOOGLE_*`) are deliberately excluded.
-- **No unsandboxed fallback** — if bubblewrap is not found, sessions refuse to start
-
-Bubblewrap is a **hard dependency** — if you're using this package, you get sandboxing. That's the point.
+- **Read-only system** — `/usr`, `/etc`, and `/sys` are mounted read-only; devices are limited to GPU (`/dev/dri`), KVM (`/dev/kvm`), and sound (`/dev/snd`).
+- **`$HOME` default-allow, secrets masked** — because agent sessions and MCP servers need your files, `$HOME` is writable, but credential/secret locations are overlaid with empty tmpfs and are invisible to the app: `~/.ssh`, `~/.gnupg`, cloud creds (`~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.kube`, `~/.docker`), `~/.pki`, keyrings, and browser profiles.
+- **`--die-with-parent`** ensures cleanup if the parent process exits; user/cgroup namespaces isolate the app.
+- **Escape hatch** — `CLAUDE_NO_SANDBOX=1` launches directly. If `bwrap` isn't installed, the launcher falls back to a direct launch with a warning.
 
 ### Network access
 
 Sandboxed sessions have **full network access**. Claude Code needs HTTPS to `api.anthropic.com` to function, and isolating the network would break core functionality. This means the agent can theoretically reach internal services on your network. If you run services on localhost or your LAN that accept unauthenticated requests, be aware of this. We may add network policy support (via nftables or a proxy) in a future release.
 
-### Computer Use permissions
+### Credentials
 
-Every Computer Use permission request shows a native dialog — nothing is auto-granted:
-
-- **Screen Recording** — screenshot capture via `grim` (Wayland) or `scrot` (X11)
-- **Input Automation** — click/type/scroll via `ydotool` (Wayland) or `xdotool` (X11)
-- **Window Listing** — via `hyprctl`/`swaymsg` (Wayland) or `wmctrl` (X11)
-
-Grants are session-only — they reset when you close Claude Desktop. All Computer Use actions are logged to the transcript store with credential redaction applied.
-
-### Credential redaction
-
-All session transcripts are scrubbed before hitting disk:
-
-- Bearer tokens, API keys (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, npm, PyPI)
-- JWTs, OAuth tokens, private keys, database connection strings
-- Google Cloud service account key IDs
-- Generic secrets in environment-style assignments
-- Sensitive environment variables filtered from subprocess environments
-
-### Path safety
-
-File operations are checked against a blocklist that includes sensitive directories (`.ssh`, `.gnupg`, `.aws`, `.kube`, `.docker`) and persistence vectors (`.bashrc`, `.profile`, `.config/autostart`, `cron`). Path traversal (`..`) is blocked at the raw input level before normalization.
+Rather than scrubbing agent transcripts after the fact, this build keeps secrets out of the sandbox in the first place: the credential and secret directories listed under [Sandboxing](#sandboxing) are masked with empty tmpfs, so a compromised renderer or MCP server never sees them. Computer Use, transcript redaction, and path-blocklist logic that this project used to *inject* into the app were removed in the July 2026 rebase — the official Linux build provides its own implementations.
 
 ### Electron sandbox
 
@@ -479,68 +381,7 @@ When `CLAUDE_VERSION` changes on `main`, the release workflow:
 1. Builds RPM, DEB, and Arch packages in pinned containers
 2. Generates a CycloneDX SBOM
 3. Creates a GitHub Release with SHA256SUMS (GPG-signed if key is configured)
-4. Publishes to Fedora COPR and AUR automatically
-
----
-
-## Configuration reference
-
-These optional config files let you customize Cowork behavior. All paths follow the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/) — if `XDG_CONFIG_HOME` is set, it replaces `~/.config`.
-
-### Resource limits (`~/.config/Claude/cowork-limits.json`)
-
-Override the default systemd-run resource limits for sandboxed Cowork sessions:
-
-```json
-{
-  "memoryMax": "8G",
-  "cpuQuota": "400%",
-  "tasksMax": "1024"
-}
-```
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `memoryMax` | `4G` | Maximum memory (systemd format: `4G`, `512M`, etc.) |
-| `cpuQuota` | `200%` | CPU quota — `200%` means 2 cores |
-| `tasksMax` | `512` | Maximum number of processes/threads |
-
-Values must match the pattern `^\d+[GMKT%]?$`. Invalid entries are silently ignored and defaults are used.
-
-### Custom credential patterns (`~/.config/Claude/credential-patterns.json`)
-
-Add your own regex patterns for credential redaction on top of the built-in set:
-
-```json
-{
-  "patterns": [
-    "my-internal-token-[A-Za-z0-9]{32}",
-    "CORP_SECRET_[A-Z0-9]+"
-  ]
-}
-```
-
-Each pattern is compiled as a case-sensitive regex. Patterns longer than 500 characters are skipped. Malformed regexes are logged and ignored.
-
-### Debug logging (`COWORK_DEBUG` environment variable)
-
-Enable verbose debug logging for all Cowork subsystems (session orchestrator, Computer Use, credential classifier):
-
-```bash
-COWORK_DEBUG=1 claude-desktop-hardened
-```
-
-Debug output is prefixed with `[cowork-debug]` and written to stderr. Useful for diagnosing sandbox startup failures, tool resolution issues, or Computer Use problems.
-
-### Transcript and session logs
-
-Cowork session transcripts (with credential redaction applied) are stored at:
-
-```
-~/.local/state/claude-cowork/logs/
-```
-
-These contain a log of all Computer Use actions, session lifecycle events, and redacted command output. Transcripts are retained until manually deleted.
+4. Publishes to Fedora COPR automatically (AUR publishing is currently paused)
 
 ---
 
