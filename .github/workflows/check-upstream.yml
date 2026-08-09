@@ -5,9 +5,13 @@ on:
     - cron: '*/10 * * * *'  # Every 10 minutes
   workflow_dispatch:
 
+# Least privilege by default: read-only workflow token. Only push-update
+# (commits the version bump) and open-issue (files a build-failure issue) get
+# write, scoped per-job below. The `check` and `test-build` jobs — which run
+# curl + the build toolchain — stay read-only, so a compromised dependency
+# there can't write to the repo.
 permissions:
-  contents: write
-  issues: write
+  contents: read
 
 # Two scheduled runs near a version bump would each try to push the same
 # CLAUDE_VERSION update, and the slower one's `git push` got rejected by
@@ -137,6 +141,8 @@ jobs:
     needs: [check, test-build]
     if: needs.test-build.outputs.status == 'passed'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # commit + push the CLAUDE_VERSION bump
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -193,6 +199,9 @@ jobs:
     # (a needed-job failure would otherwise skip this despite the condition).
     if: always() && needs.test-build.outputs.status == 'failed'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read    # checkout only
+      issues: write     # file/update the build-failure issue
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 

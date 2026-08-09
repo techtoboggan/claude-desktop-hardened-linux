@@ -11,10 +11,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege by default: the workflow-wide token is READ-ONLY. Only the
+# specific job that needs to write (the `release` job that creates the GitHub
+# Release) is granted contents: write below. This isolates the jobs that run
+# third-party tooling (e.g. the SBOM job runs cdxgen + its dependency tree) so
+# a compromised dependency can't use the run's GITHUB_TOKEN to commit to the
+# repo — which is how the Shai-Hulud worm injected commit 1652b9d.
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 # Serialize release runs so two dispatches don't race to publish to the
 # same tag. `cancel-in-progress: false` (NOT true) because the workflow's
@@ -182,6 +186,8 @@ jobs:
     needs: [check-version, build-rpm, build-deb, build-arch, sbom]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the tag + GitHub Release and upload assets
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
         with:
