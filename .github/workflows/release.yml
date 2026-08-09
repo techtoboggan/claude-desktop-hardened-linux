@@ -281,9 +281,14 @@ jobs:
   # ---------------------------------------------------------------------------
   # Publish to Fedora COPR
   # ---------------------------------------------------------------------------
+  # DISABLED (2026-08): paused during the Shai-Hulud CI-compromise incident.
+  # COPR credentials could not be rotated (account/API access lost), so we
+  # stop pushing to COPR rather than run with credentials of uncertain status.
+  # Re-enable by restoring the should_release condition once COPR access + a
+  # fresh API token are confirmed.
   publish-copr:
     needs: [check-version, release]
-    if: needs.check-version.outputs.should_release == 'true'
+    if: false
     runs-on: ubuntu-latest
     container: fedora@sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
     steps:
