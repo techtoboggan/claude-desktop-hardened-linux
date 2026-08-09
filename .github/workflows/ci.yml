@@ -55,7 +55,11 @@ jobs:
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install scanning tools
+      # Only vet (SHA256-pinned binary) remains. Removed owasp-depscan: it was
+      # installed UNPINNED via pip (a large floating transitive tree that
+      # executes in CI) and had no dependency manifest to scan in this repo —
+      # same risk class as the removed cdxgen/anti-trojan steps, for ~no value.
+      - name: Install vet (pinned malware scanner)
         run: |
           VET_VERSION="v1.8.8"
           VET_SHA256="87ca148769b24e17bda459d0042152eb4472e832ca433eeadaac108a8c242e52"
@@ -73,23 +77,10 @@ jobs:
               chmod +x /usr/local/bin/vet 2>/dev/null || true
             fi
           fi
-          pip install owasp-depscan --quiet 2>/dev/null || echo "::warning::Could not install depscan"
 
       - name: Scan for malware in dependencies
         run: vet scan -D . --malware-query || true
         continue-on-error: true
-
-      - name: OWASP dependency scan
-        run: depscan --src . --reports-dir ./security-reports --no-banner || true
-        continue-on-error: true
-
-      - name: Upload security reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: security-reports
-          path: security-reports/
-          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # Stage 2: Unit + integration tests (after security passes)

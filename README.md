@@ -361,7 +361,7 @@ Every push and PR runs:
 - **Shell lint** — `bash -n` on the build pipeline and generated launcher; doctor integration test
 - **Package smoke tests** — verifies each built package contains the official payload (`app.asar`, bundled Electron, chrome-sandbox), the launcher, correct permissions, valid desktop entry, and reasonable size
 - **Source integrity** — shell scripts scanned for suspicious patterns (encoded payloads, `curl | sh`, etc.)
-- **Dependency scanning** — OWASP depscan for vulnerabilities, vet for malware
+- **Dependency scanning** — `vet` (SHA256-pinned) malware scan
 
 ### Automated updates
 
