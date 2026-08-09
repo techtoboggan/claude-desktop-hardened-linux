@@ -12,8 +12,10 @@ node_modules/
 __pycache__/
 *.pyc
 
-# Claude Code workspace
+# Editor / agent workspace dirs (never commit — a supply-chain worm abused
+# these to plant auto-run hooks/tasks; see git history around 2026-08).
 .claude/
+.vscode/
 
 # OS files
 .DS_Store
