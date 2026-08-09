@@ -12,7 +12,7 @@ The official Anthropic Claude Desktop Linux app, **wrapped in a bubblewrap sandb
 
 - **Enforced sandboxing** — the app runs inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace: read-only system, device access limited to GPU/KVM/sound, and PID/UTS/cgroup isolation. Because Claude is agentic (Cowork/Code sessions and MCP servers need your files and tools), `$HOME` is **default-allow but with credential/secret locations masked** — `~/.ssh`, `~/.gnupg`, cloud creds (`~/.aws`, `~/.config/gcloud`, `~/.kube`, …), browser profiles, and keyrings are replaced with empty tmpfs, so a compromised renderer or MCP server can't read your secrets or modify the system, while your projects still work. Escape hatch: `CLAUDE_NO_SANDBOX=1`.
 - **Fedora/RHEL + Arch packaging** — the official build is Debian/Ubuntu-only; we cover the RPM and Arch worlds (plus a hardened `.deb`).
-- **Supply-chain hardening** — the official `.deb` is pinned by SHA256, releases ship an SBOM (CycloneDX) and GPG-signed `SHA256SUMS`, all CI actions are SHA-pinned, and sources are scanned for trojan-source/malware.
+- **Supply-chain hardening** — the official `.deb` is pinned by SHA256, releases ship GPG-signed `SHA256SUMS`, all CI actions are SHA-pinned, and CI runs with a read-only token by default (write scoped per-job).
 - **Bundled Claude Code CLI** — the `claude` command, available system-wide after install.
 - **Diagnostics** — `claude-desktop-hardened --doctor`.
 
@@ -350,9 +350,9 @@ The `chrome-sandbox` binary is set to `4755 root:root` (setuid) during post-inst
 Two files control all external dependency versions:
 
 - **`CLAUDE_VERSION`** — pins the exact official Claude Desktop Linux release (version + SHA256 of the official `.deb`)
-- **`TOOL_VERSIONS`** — pins the Claude CLI, cdxgen, vet, and container image digests
+- **`TOOL_VERSIONS`** — pins the Claude CLI, vet, and container image digests
 
-All GitHub Actions are pinned to full commit SHAs. Container images are pinned to SHA256 digests. npm packages are installed with `--ignore-scripts`.
+All GitHub Actions are pinned to full commit SHAs. Container images are pinned to SHA256 digests. npm packages are installed with `--ignore-scripts`, and CI jobs run with a read-only `GITHUB_TOKEN` by default (write is granted per-job only where required).
 
 ### CI pipeline
 
@@ -360,9 +360,8 @@ Every push and PR runs:
 
 - **Shell lint** — `bash -n` on the build pipeline and generated launcher; doctor integration test
 - **Package smoke tests** — verifies each built package contains the official payload (`app.asar`, bundled Electron, chrome-sandbox), the launcher, correct permissions, valid desktop entry, and reasonable size
-- **Source integrity** — trojan source / Unicode attack scanning on all shell files
+- **Source integrity** — shell scripts scanned for suspicious patterns (encoded payloads, `curl | sh`, etc.)
 - **Dependency scanning** — OWASP depscan for vulnerabilities, vet for malware
-- **SBOM** — CycloneDX bill of materials attached to every release
 
 ### Automated updates
 
@@ -379,9 +378,8 @@ A CI workflow polls Anthropic's official Linux apt index. When a new version is 
 When `CLAUDE_VERSION` changes on `main`, the release workflow:
 
 1. Builds RPM, DEB, and Arch packages in pinned containers
-2. Generates a CycloneDX SBOM
-3. Creates a GitHub Release with SHA256SUMS (GPG-signed if key is configured)
-4. Publishes to Fedora COPR automatically (AUR publishing is currently paused)
+2. Creates a GitHub Release with SHA256SUMS (GPG-signed if key is configured)
+3. Publishes to Fedora COPR automatically (AUR publishing is currently paused)
 
 ---
 

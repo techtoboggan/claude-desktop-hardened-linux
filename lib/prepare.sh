@@ -12,8 +12,8 @@
 #
 #   1. Enforced bubblewrap sandboxing (the launcher runs the app in a bwrap
 #      namespace with a restricted view of $HOME and devices).
-#   2. Supply-chain hardening (SHA256-pinned official .deb, SBOM, GPG-signed
-#      checksums, SHA-pinned CI, source scanning — see CI).
+#   2. Supply-chain hardening (SHA256-pinned official .deb, GPG-signed
+#      checksums, SHA-pinned CI actions, least-privilege CI token — see CI).
 #   3. Bundled Claude Code CLI + diagnostics.
 #
 # Requires: WORK_DIR, PKG_ROOT, INSTALL_DIR, INSTALL_LIB_DIR, SCRIPT_DIR, VERSION
@@ -76,9 +76,14 @@ prepare_app() {
     npm --version || true
     # Don't suppress npm's output — a silent `>/dev/null 2>&1` here previously
     # hid the real error when the Arch toolchain broke CLI bundling.
+    # @anthropic-ai/claude-code has no runtime dependencies and is version-pinned
+    # (CLAUDE_CLI_VERSION), so the pin IS the lock — there is no transitive tree
+    # to float. --ignore-scripts blocks install lifecycle scripts; --no-audit
+    # --no-fund cut extra network calls.
     if ! ( cd "$CLAUDE_CLI_DIR" \
             && npm init -y \
-            && npm install "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" --ignore-scripts ); then
+            && npm install "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
+                 --ignore-scripts --no-audit --no-fund ); then
         log_error "Failed to bundle Claude Code CLI (@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION})"
         exit 1
     fi
@@ -140,7 +145,7 @@ EOF
     <p>
       Repackages Anthropic's OFFICIAL Claude Desktop Linux build (.deb) for
       Fedora/RHEL and Arch, and adds enforced bubblewrap sandboxing plus
-      supply-chain hardening (SHA256-pinned upstream, SBOM, GPG-signed
+      supply-chain hardening (SHA256-pinned upstream, GPG-signed
       checksums). The application payload is the official Linux build,
       unmodified; only the launcher and packaging are ours.
     </p>

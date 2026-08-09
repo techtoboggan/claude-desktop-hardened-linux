@@ -20,22 +20,19 @@ jobs:
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Detect trojan source (Unicode/bidirectional attacks)
-        run: |
-          npx anti-trojan-source@1.8.1 --files='{lib/**/*.sh,scripts/**/*.sh,build.sh}' --verbose || {
-            EXIT_CODE=$?
-            if [ "$EXIT_CODE" -eq 1 ]; then
-              echo "::warning::Confusable characters found (emoji variation selectors, etc.) — review above"
-            else
-              echo "::error::Dangerous Unicode characters detected!"
-              exit "$EXIT_CODE"
-            fi
-          }
-
+      # NOTE: the anti-trojan-source npx scan was removed — it executed a
+      # third-party npm package (and its deps) on every push. We repackage
+      # Anthropic's SHA256-pinned official build, so the marginal value didn't
+      # justify running extra untrusted code in CI. The pure-bash check stays.
       - name: Detect suspicious patterns in shell scripts
         run: |
           echo "Checking for encoded payloads, eval abuse, and suspicious downloads..."
@@ -198,27 +195,5 @@ jobs:
             build/electron-app/**/PKGBUILD
           if-no-files-found: warn
 
-  # ---------------------------------------------------------------------------
-  # Stage 4: SBOM generation (parallel with builds, after security)
-  # ---------------------------------------------------------------------------
-  sbom:
-    name: SBOM
-    needs: [source-integrity, dependency-scan]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Generate CycloneDX SBOM
-        run: |
-          npm install -g @cyclonedx/cdxgen@11.11.0
-          cdxgen -o sbom.json --spec-version 1.5 .
-          echo "SBOM: $(jq '.components | length' sbom.json) components"
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sbom
-          path: sbom.json
+  # (SBOM job removed — it ran cdxgen + its large unpinned transitive
+  # dependency tree in CI. See release.yml for the same removal.)

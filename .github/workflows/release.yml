@@ -12,11 +12,11 @@ on:
   workflow_dispatch:
 
 # Least privilege by default: the workflow-wide token is READ-ONLY. Only the
-# specific job that needs to write (the `release` job that creates the GitHub
-# Release) is granted contents: write below. This isolates the jobs that run
-# third-party tooling (e.g. the SBOM job runs cdxgen + its dependency tree) so
-# a compromised dependency can't use the run's GITHUB_TOKEN to commit to the
-# repo — which is how the Shai-Hulud worm injected commit 1652b9d.
+# specific jobs that must write (the `release` job that creates the GitHub
+# Release, and the disabled publish-apt job) are granted contents: write
+# per-job below. This isolates the build jobs that run third-party tooling so a
+# compromised dependency can't use the run's GITHUB_TOKEN to commit to the repo
+# — which is how the Shai-Hulud worm injected commit 1652b9d.
 permissions:
   contents: read
 
@@ -160,30 +160,12 @@ jobs:
             build/electron-app/**/*.pkg.tar.*
             build/electron-app/**/PKGBUILD
 
-  sbom:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Generate CycloneDX SBOM
-        run: |
-          npm install -g @cyclonedx/cdxgen@11.11.0
-          cdxgen -o sbom.json --spec-version 1.5 .
-          echo "SBOM: $(jq '.components | length' sbom.json) components"
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sbom
-          path: sbom.json
+  # (SBOM job removed — it ran cdxgen + its large unpinned transitive
+  # dependency tree in a CI job. We repackage Anthropic's SHA256-pinned
+  # official build, so the self-generated SBOM wasn't worth that attack surface.)
 
   release:
-    needs: [check-version, build-rpm, build-deb, build-arch, sbom]
+    needs: [check-version, build-rpm, build-deb, build-arch]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -191,7 +173,13 @@ jobs:
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            uploads.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -214,7 +202,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          find . -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg.tar.*" -o -name "sbom.json" \) \
+          find . -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.pkg.tar.*" \) \
             -exec sha256sum {} \; | sort > ../SHA256SUMS
           cd ..
           echo "Generated checksums for $(wc -l < SHA256SUMS) files"
@@ -264,17 +252,14 @@ jobs:
             - Native Wayland support
 
             ### Supply chain security
-            - SBOM (CycloneDX) attached as `sbom.json`
             - `SHA256SUMS` with GPG signature for integrity verification
-            - All CI actions pinned to commit SHAs
-            - Source scanned for trojan source attacks and malware
+            - All CI actions pinned to commit SHAs; CI runs with a read-only token by default
             - official Linux `.deb` SHA256 verified against pin in `CLAUDE_VERSION`
           files: |
             artifacts/**/*.rpm
             artifacts/**/*.deb
             artifacts/**/*.pkg.tar.*
             artifacts/**/PKGBUILD
-            artifacts/sbom/sbom.json
             SHA256SUMS
             SHA256SUMS.asc
           draft: false
@@ -287,14 +272,12 @@ jobs:
   # ---------------------------------------------------------------------------
   # Publish to Fedora COPR
   # ---------------------------------------------------------------------------
-  # DISABLED (2026-08): paused during the Shai-Hulud CI-compromise incident.
-  # COPR credentials could not be rotated (account/API access lost), so we
-  # stop pushing to COPR rather than run with credentials of uncertain status.
-  # Re-enable by restoring the should_release condition once COPR access + a
-  # fresh API token are confirmed.
+  # Re-enabled 2026-08 after the COPR API token was rotated (the earlier
+  # lockout was Fedora infra trouble, not a ban). Runs with the read-only
+  # default token; COPR auth comes from the rotated COPR_* secrets.
   publish-copr:
     needs: [check-version, release]
-    if: false
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     container: fedora@sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
     steps:
